@@ -2,9 +2,6 @@ site_name: RamseyTrinh doc
 
 site_url: https://ramseytrinh.github.io/
 
-extra_javascript:
-  - assets/checklist-persist.js
-
 nav:
   - Home: index.md
   - Docker:
