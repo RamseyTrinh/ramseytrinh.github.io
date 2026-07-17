@@ -1,112 +1,64 @@
-# Dockerfile
+# Dockerfile & Compose
 
-## Dockerfile path
+Reference based on [Dockerfile reference](https://docs.docker.com/reference/dockerfile/) and [Compose file reference](https://docs.docker.com/reference/compose-file/).
 
-- FROM - The os used. Common is alpine, debian, ubuntu
-- ENV - Environment variables
-- RUN - Run commands/shell scripts, etc
-- EXPOSE - Ports to expose
-- CMD - Final command run when you launch a new container from image
-- WORKDIR - Sets working directory (also could use 'RUN cd /some/path')
-- COPY # Copies files from host to container
+## Common instructions
 
-## Build with Dockerfile
+| Instruction | Purpose |
+|---|---|
+| `FROM` | base image (e.g. `alpine`, `debian`, `ubuntu`) |
+| `WORKDIR` | set the working directory for following instructions |
+| `COPY` | copy files from build context into the image |
+| `RUN` | execute a command at build time (installs, setup) |
+| `ENV` | set an environment variable |
+| `EXPOSE` | document the port(s) the container listens on |
+| `CMD` | default command run when the container starts |
 
-### From the same directory as Dockerfile
+## Build & run
 
-```
-$ docker image build -t [REPONAME] .
-```
-### Benchmarking builds
-
-```
-$ DOCKER_BUILDKIT=1 docker image build -t [REPONAME] .
-```
-
-### Tip: Cache and Order
-
-- If you re-run the build, it will be quick because everythging is cached.
-- If you change one line and re-run, that line and everything after will not be cached
-- Keep things that change the most toward the bottom of the Dockerfile
-
-## Usual step
-
-Build image from Dockerfile
-
-```
-$ docker image build -t nginx
-```
-Running it
-
-```
-$ docker container run -p 80:80 --rm nginx
-```
-Tag 
-
-```
-$ docker image tag nginx:latest ramseytrinh/nginx:latest
-```
-Push to Dockerhub
-```
-$ docker image push ramseytrinh/nginx:latest
+```bash
+docker build -t <repo>/<name> .          # build from Dockerfile in cwd
+docker run -p 80:80 --rm <repo>/<name>   # run it
+docker tag <name>:latest <repo>/<name>:latest
+docker push <repo>/<name>:latest
 ```
 
-## DOCKER COMPOSE
+!!! tip "Layer caching"
+    Each instruction is a cached layer. Changing a line invalidates the cache for that line and every line after it. Put the things that change most often (like `COPY . .`) near the **bottom** of the Dockerfile to keep builds fast.
 
-- Configure relationships between containers
-- Save our docker container run settings in easy to read file
+## Minimal example
 
-### Sample compose file
-
-```
-version: '2'
-
-# same as
-# docker run -p 80:4000 -v $(pwd):/site bretfisher/jekyll-serve
-
-services:
-  jekyll:
-    image: bretfisher/jekyll-serve
-    volumes:
-      - .:/site
-    ports:
-      - '80:4000'
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY . .
+EXPOSE 3000
+CMD ["node", "index.js"]
 ```
 
+## Docker Compose
 
-### Example 2
-```
-version: '3'
+Compose describes multi-container setups in one file. The `version:` key is obsolete in the current Compose Specification and can be omitted.
+
+```yaml
 services:
   app:
-    container_name: docker-node-mongo
-    restart: always
     build: .
     ports:
-      - '80:3000'
-    links:
+      - "80:3000"
+    depends_on:
       - mongo
   mongo:
-    container_name: mongo
     image: mongo
     ports:
-      - '27017:27017'
+      - "27017:27017"
 ```
 
-### To run
-
-```
-docker-compose up
-```
-
-### You can run in background with
-
-```
-docker-compose up -d
-```
-
-### To cleanup
-
-```
-docker-compose down
+```bash
+docker compose up          # start (foreground)
+docker compose up -d       # start (detached)
+docker compose logs -f     # follow logs
+docker compose down        # stop and remove containers/networks
 ```

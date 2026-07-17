@@ -1,290 +1,86 @@
 # Docker cheat sheet
 
-## Docker version
+Quick reference for everyday Docker CLI usage. Based on the [official Docker CLI reference](https://docs.docker.com/reference/cli/docker/).
 
-```shell
-$ docker version
-```
+## Common flags
 
-## Show info
+| Flag | Meaning |
+|---|---|
+| `-d` | run in detached mode (background) |
+| `-it` | interactive terminal (`-i` keep STDIN open, `-t` allocate a TTY) |
+| `--name` | assign a container name |
+| `-p host:container` | publish a port |
+| `-v host:container` | mount a volume / bind mount |
+| `-e KEY=value` | set an environment variable |
+| `--rm` | remove the container automatically on exit |
+| `--network` | attach to a network (default: `bridge`) |
+| `--restart` | restart policy (`no`, `on-failure`, `always`, `unless-stopped`) |
 
-```shell
-$ docker info
-```
-## Some flag in command
-
-```bash
--d: run in "detached" mode
--i: keep STDIN open 
--t: allocate a terminal interating with container
--it: access terminal
---name: name
--p: map ports
---rm: remove the container when it exits.
--v: mout a volume
---network: specify the network (Default: bridge)
--e: environment variables
---link: link to another running container
---restart: set the restart policy
-```
-
-## Images commands
-
-### List images
-
-```
-$ docker image ls
-or
-$ docker images
-```
-
-### Pull down images
-
-```
-$ docker pull [IMAGE]
-```
-
-### Remove image
-
-```
-$ docker image rm [IMAGE]
-$ docker rmi [IMAGE]
-```
-
-### Remove all images
-
-```
-$ docker rmi $(docker images -a -q)
-```
-
-### Some sample container creation
-
-NGINX:
+## Images
 
 ```bash
-$ docker container run -d -p 80:80 --name nginx nginx
+docker images                      # list local images
+docker pull <image>                # download an image
+docker image rm <image>            # remove one image
+docker rmi $(docker images -aq)    # remove all images
+docker image tag <src> <dst>       # retag an image
+docker push <image>                # push to a registry
 ```
 
-APACHE:
+## Containers
 
 ```bash
-$ docker container run -d -p 8080:80 --name apache httpd
+docker run -d -p 80:80 --name web nginx   # create + start
+docker ps                                 # list running containers
+docker ps -a                              # list all containers (incl. stopped)
+docker stop <name|id>                     # stop
+docker stop $(docker ps -aq)              # stop all
+docker rm <name|id>                       # remove (must be stopped, or add -f)
+docker rm $(docker ps -aq)                # remove all
+docker start -ai <name|id>                # restart and attach
+docker exec -it <name|id> sh              # shell into a running container
+docker logs -f <name|id>                  # follow logs
+docker inspect <name|id>                  # full metadata as JSON
+docker stats <name|id>                    # live resource usage
 ```
 
-MONGODB:
-
-```bash
-$ docker container run -d -p 27017:27017 --name mongo mongo
-```
-
-MYSQL:
-
-```bash
-$ docker container run -d -p 3306:3306 --name mysql --env MYSQL_ROOT_PASSWORD=123456 mysql
-```
-## Containers commands
-
-### Create and run
-
-```bash
-$ docker container run -it -p 80:80 nginx
-```
-
-### List running
-
-```
-$ docker ps
-```
-
-### List all
-
-```
-$ docker ps -a
-```
-
-### Stop
-
-```
-$ docker container stop []
-```
-
-### Stop all running
-
-```
-$ docker stop $(docker ps -aq)
-```
-
-### Force remove
-
-```
-$ docker container rm -f [ID]
-```
-
-### Remove multiple
-
-```
-$ docker container rm [ID] [ID] [ID]
-```
-
-### Remove all
-
-```
-$ docker rm $(docker ps -aq)
-```
-
-### Get logs (Use name or ID)
-
-```
-$ docker container logs [NAME]
-```
-
-### TIP: About containers
-
-Docker containers are often compared to virtual machines but they are actually just processes running on your host os. In Windows/Mac, Docker runs in a mini-VM so to see the processes youll need to connect directly to that. On Linux however you can run "ps aux" and see the processes directly
-
-### View info
-
-```
-$ docker container inspect [NAME]
-```
-
-### Performance stats info
-
-```
-$ docker container stats [NAME]
-```
-
-### Access an already created
-
-```
-$ docker container start -ai ubuntu
-```
-
-### Edit config
-
-```bash
-$ docker container exec -it mysql bash
-```
+!!! tip "Containers vs VMs"
+    A container is just an isolated process on the host kernel, not a full VM. On Linux, container processes show up directly in `ps aux`. Docker Desktop (Mac/Windows) runs a lightweight Linux VM under the hood to make this possible.
 
 ## Networking
 
-"bridge" or "docker0" is the default network
-
-### Get port
-
-```
-$ docker container port [NAME]
-```
-
-### List networks
-
-```
-$ docker network ls
-```
-
-### Inspect network
-
-```
-$ docker network inspect [NETWORK_NAME]
-("bridge" is default)
-```
-
-### Create network
-
-```
-$ docker network create [NETWORK_NAME]
-```
-
-or 
 ```bash
-$ docker network create --driver bridge [NETWORK_NAME]
-```
-
-### Connect existing container to network
-
-```
-$ docker network connect [NETWORK_NAME] [CONTAINER_NAME]
-```
-
-### Disconnect container from network
-
-```
-$ docker network disconnect [NETWORK_NAME] [CONTAINER_NAME]
-```
-
-### Detach network from container
-
-```
-$ docker network disconnect
-```
-
-### Delete/Remove network
-
-To remove the network by name or id, multiple can be deleted:
-
-```shell
-$ docker network rm [NETWORK_NAME] [NETWORK_NAME]
-```
-
-## Image tagging & Push to Dockerhub
-
-```
-$ docker image ls
-```
-
-### Retag existing image
-
-```
-$ docker image tag nginx btraversy/nginx
-```
-
-### Upload to dockerhub
-
-```
-$ docker image push bradtraversy/nginx
+docker network ls                                  # list networks
+docker network create <name>                       # create (default driver: bridge)
+docker network inspect <name>                       # inspect
+docker network connect <network> <container>         # attach a running container
+docker network disconnect <network> <container>      # detach
+docker network rm <name>                             # remove
 ```
 
 ## Volumes
 
-Volume - Makes special location outside of container UFS. Used for databases
-Bind Mount -Link container path to host path
-
-### Check volumes
-
-```
-$ docker volume ls
-```
-
-### Cleanup unused volumes
-
-```
-$ docker volume prune
-```
-
-
-
-### TIP: Mounts
-
-- You will also see the volume under mounts
-- Container gets its own uniqe location on the host to store that data
-- Source: xxx is where it lives on the host
-
-### Check volumes
-
-```
-$ docker volume ls
-```
-
-**There is no way to tell volumes apart for instance with 2 mysql containers, so we used named volumes**
-
-### Named volumes (Add -v command)
-
-```
-$ docker container run -d --name mysql -v mysql-db:/var/lib/mysql mysql
-```
-
-### Inspect new named volume
+A **volume** is storage managed by Docker (outside the container filesystem) — the standard way to persist data such as databases. A **bind mount** instead maps a specific host path into the container.
 
 ```bash
-docker volume inspect mysql-db
+docker volume ls                     # list volumes
+docker volume inspect <name>          # inspect
+docker volume prune                   # remove unused volumes
+
+docker run -d --name db -v db-data:/var/lib/mysql mysql   # named volume
+```
+
+Named volumes matter as soon as you run more than one instance of the same image (e.g. two MySQL containers) — without a name there's no way to tell their data apart.
+
+## Quick recipes
+
+```bash
+# nginx
+docker run -d -p 80:80 --name nginx nginx
+
+# postgres
+docker run -d -p 5432:5432 --name postgres -e POSTGRES_PASSWORD=postgres postgres
+
+# mysql
+docker run -d -p 3306:3306 --name mysql -e MYSQL_ROOT_PASSWORD=root mysql
 ```

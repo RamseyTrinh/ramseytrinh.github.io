@@ -1,9 +1,99 @@
 site_name: RamseyTrinh doc
 
-site_url: https://docs.ramseytrinh.com
+site_url: https://ramseytrinh.github.io/
+
+extra_javascript:
+  - assets/checklist-persist.js
+
+nav:
+  - Home: index.md
+  - Docker:
+      - Docker.md
+      - Docker_file.md
+  - Database:
+      - Database/PITR_Postgresql.md
+  - Terraform:
+      - Terraform/Terraform.md
+      - Terraform/Develop_Terraform.md
+  - Kubernetes:
+      - Kubernetes/CKA.md
+      - Kubernetes/CKA_Checklist.md
+      - CKA Exercises:
+          - Kubernetes/CKA/exercises/Day1.md
+          - Kubernetes/CKA/exercises/Day2.md
+          - Kubernetes/CKA/exercises/Day3.md
+          - Kubernetes/CKA/exercises/Day4.md
+          - Kubernetes/CKA/exercises/Day5.md
+          - Kubernetes/CKA/exercises/Day6.md
+          - Kubernetes/CKA/exercises/Day7.md
+          - Kubernetes/CKA/exercises/Day8.md
+          - Kubernetes/CKA/exercises/Day9.md
+          - Kubernetes/CKA/exercises/Day10.md
+          - Kubernetes/CKA/exercises/Day11.md
+          - Kubernetes/CKA/exercises/Day12.md
+          - Kubernetes/CKA/exercises/Day13.md
+          - Kubernetes/CKA/exercises/Day14.md
+          - Kubernetes/CKA/exercises/Day15.md
+          - Kubernetes/CKA/exercises/Day16.md
+          - Kubernetes/CKA/exercises/Day17.md
+          - Kubernetes/CKA/exercises/Day18.md
+          - Kubernetes/CKA/exercises/Day19.md
+          - Kubernetes/CKA/exercises/Day20.md
+          - Kubernetes/CKA/exercises/Day21.md
+          - Kubernetes/CKA/exercises/Day22.md
+          - Kubernetes/CKA/exercises/Day23.md
+          - Kubernetes/CKA/exercises/Day24.md
+          - Kubernetes/CKA/exercises/Day25.md
+          - Kubernetes/CKA/exercises/Day26.md
+          - Kubernetes/CKA/exercises/Day27.md
+          - Kubernetes/CKA/exercises/Day28.md
+          - Kubernetes/CKA/exercises/Day29.md
+          - Kubernetes/CKA/exercises/Day30.md
+          - Kubernetes/CKA/exercises/Day31.md
+      - CKA Cheatsheet:
+          - Kubernetes/CKA/cheatsheet/cka-cheatsheet.md
+      - CKA Troubleshooting:
+          - Kubernetes/CKA/troubleshooting/README.md
+      - CKA Mock Exams:
+          - Kubernetes/CKA/mock-exams/README.md
+          - Kubernetes/CKA/mock-exams/MOCK-EXAM-01.md
+          - Kubernetes/CKA/mock-exams/MOCK-EXAM-01-SOLUTIONS.md
+          - Kubernetes/CKA/mock-exams/MOCK-EXAM-02.md
+          - Kubernetes/CKA/mock-exams/MOCK-EXAM-02-SOLUTIONS.md
+      - CKA Skeletons:
+          - Kubernetes/CKA/skeletons/pod.md
+          - Kubernetes/CKA/skeletons/deployment.md
+          - Kubernetes/CKA/skeletons/daemonset.md
+          - Kubernetes/CKA/skeletons/statefulset.md
+          - Kubernetes/CKA/skeletons/job.md
+          - Kubernetes/CKA/skeletons/cronjob.md
+          - Kubernetes/CKA/skeletons/configmap-secret.md
+          - Kubernetes/CKA/skeletons/sidecar-init-container.md
+          - Kubernetes/CKA/skeletons/securitycontext.md
+          - Kubernetes/CKA/skeletons/service.md
+          - Kubernetes/CKA/skeletons/ingress.md
+          - Kubernetes/CKA/skeletons/gateway-api.md
+          - Kubernetes/CKA/skeletons/networkpolicy.md
+          - Kubernetes/CKA/skeletons/pv.md
+          - Kubernetes/CKA/skeletons/pvc.md
+          - Kubernetes/CKA/skeletons/storageclass.md
+          - Kubernetes/CKA/skeletons/rbac.md
+          - Kubernetes/CKA/skeletons/clusterrole.md
+          - Kubernetes/CKA/skeletons/serviceaccount.md
+          - Kubernetes/CKA/skeletons/resourcequota.md
+          - Kubernetes/CKA/skeletons/limitrange.md
+          - Kubernetes/CKA/skeletons/hpa.md
+          - Kubernetes/CKA/skeletons/validatingadmissionpolicy.md
 
 theme:
   name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
   font:
     text: Merriweather Sans
     code: Red Hat Mono
@@ -26,7 +116,9 @@ theme:
     accent: deep orange
   
 markdown_extensions:
+  - admonition
   - attr_list
+  - md_in_html
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -45,6 +137,9 @@ markdown_extensions:
       alternate_style: true
       combine_header_slug: true
   - pymdownx.details
+  - pymdownx.tasklist:
+      custom_checkbox: true
+      clickable_checkbox: true
 
 extra:
   social:

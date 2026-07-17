@@ -1,46 +1,49 @@
-# Welcome to Ramsey Docs
+# Ramsey Docs
 
-<!-- For full documentation visit [mkdocs.org](https://www.mkdocs.org).
+<img align="right" alt="cat" width="180" src="https://user-images.githubusercontent.com/74038190/216655848-cf4d7bed-52aa-4740-8c67-1832472051ec.gif"/>
 
-## Commands
+Personal knowledge base of a DevOps / Infrastructure Engineer — notes, cheat sheets, and runbooks collected from day-to-day work with containers, infrastructure-as-code, and databases.
 
-* `mkdocs new [dir-name]` - Create a new project.
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
+## Contents
 
-## Project layout
+<div class="grid cards" markdown>
 
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files. -->
+- :material-docker:{ .lg .middle } **Docker**
 
-Hi guys!
+    ---
 
-Documentation is one of the most important steps when learning or working.
+    Command cheat sheet and Dockerfile reference.
 
-<img align="right" alt="cat" src="https://user-images.githubusercontent.com/74038190/216655848-cf4d7bed-52aa-4740-8c67-1832472051ec.gif"/>
+    [:octicons-arrow-right-24: Docker](Docker.md) · [Dockerfile](Docker_file.md)
 
+- :material-cloud-outline:{ .lg .middle } **Terraform**
 
-Contact:
+    ---
 
-- Phone number: 0394836338
+    User workflow (plan/apply) and writing custom providers with the Plugin Framework.
 
-- Email: hoangkmhd190@gmail.com
+    [:octicons-arrow-right-24: Terraform](Terraform/Terraform.md) · [Develop Terraform](Terraform/Develop_Terraform.md)
 
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
-<img width=30 height=30 src="https://user-images.githubusercontent.com/74038190/212262208-6e0cbfcb-1965-4b5e-9625-fee0a5d172d3.jpg"/>
+- :material-database-outline:{ .lg .middle } **Database**
 
+    ---
 
-:fontawesome-solid-ghost:
-:fontawesome-solid-ghost:
-:fontawesome-solid-ghost:
+    Point-in-time recovery setup and reference links.
+
+    [:octicons-arrow-right-24: PITR in PostgreSQL](Database/PITR_Postgresql.md)
+
+- :material-kubernetes:{ .lg .middle } **Kubernetes**
+
+    ---
+
+    CKA exam overview, 30-day study checklist, 31 hands-on exercises, cheat sheet, troubleshooting playbook, mock exams, and YAML skeletons.
+
+    [:octicons-arrow-right-24: CKA](Kubernetes/CKA.md) · [Checklist](Kubernetes/CKA_Checklist.md) · [Day 1 exercise](Kubernetes/CKA/exercises/Day1.md)
+
+</div>
+
+## Contact
+
+- **Email:** [hoangkmhd190@gmail.com](mailto:hoangkmhd190@gmail.com)
+- **Phone:** +84 394 836 338
+- **GitHub / Facebook:** see the icons in the footer
