@@ -1,4 +1,4 @@
-# CKA — Checklist học 30 ngày
+# CKA — Checklist to GOAL
 
 Kế hoạch học mỗi ngày một chủ đề, bám theo trọng số domain của kỳ thi CKA (xem [CKA](CKA.md)) và cấu trúc bài lab từ [theplatformlab/CKA-Certified-Kubernetes-Administrator](https://github.com/theplatformlab/CKA-Certified-Kubernetes-Administrator). Tick vào ô khi hoàn thành.
 
@@ -7,10 +7,10 @@ Kế hoạch học mỗi ngày một chủ đề, bám theo trọng số domain 
 
 ## Tuần 1 — Nền tảng + Storage (10%)
 
-- [ ] Ngày 1: Setup cluster thực hành bằng kind (`init-cluster.sh`) — tạo cluster Kubernetes v1.35.1 local để lab
-- [ ] Ngày 2: Pod cơ bản — tạo, xem, xóa Pod; multi-container Pod (sidecar pattern cũ)
-- [ ] Ngày 3: **Native sidecar container (mới ở v1.35, GA)** — init container với `restartPolicy: Always`, phân biệt với multi-container Pod truyền thống
-- [ ] Ngày 4: ConfigMap và Secret — tạo, mount vào Pod (qua env var / volume)
+- [x] Ngày 1: Setup cluster thực hành bằng kind (`init-cluster.sh`) — tạo cluster Kubernetes v1.35.1 local để lab
+- [x] Ngày 2: Pod cơ bản — tạo, xem, xóa Pod; multi-container Pod (sidecar pattern cũ)
+- [x] Ngày 3: **Native sidecar container (mới ở v1.35, GA)** — init container với `restartPolicy: Always`, phân biệt với multi-container Pod truyền thống
+- [x] Ngày 4: ConfigMap và Secret — tạo, mount vào Pod (qua env var / volume)
 - [ ] Ngày 5: Storage — PersistentVolume, PersistentVolumeClaim, StorageClass, access modes
 - [ ] Ngày 6: Storage nâng cao — `WaitForFirstConsumer` binding mode
 - [ ] Ngày 7: Ôn tập tuần 1 + thực hành lại toàn bộ bằng tay (không xem tài liệu)
