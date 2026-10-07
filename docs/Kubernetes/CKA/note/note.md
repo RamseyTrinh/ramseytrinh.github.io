@@ -74,6 +74,7 @@ The most common networking issues on the exam:
 
 ### Domain 3: Workloads, Scheduling
 1. Deployments manage ReplicaSets, which manage Pods
+1. Pod/Container just has containerPort. Service has port and targetPort
 2. ConfigMaps hold non-sensitive config. Secrets hold sensitive data (base64-encoded, not encrypted by default)
 3. Three ways to inject ConfigMap/Secret into a pod:
 
