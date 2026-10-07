@@ -49,6 +49,8 @@ nav:
           - Kubernetes/CKA/exercises/Day31.md
       - CKA Cheatsheet:
           - Kubernetes/CKA/cheatsheet/cka-cheatsheet.md
+      - CKA Notes:
+          - Kubernetes/CKA/note/note.md
       - CKA Troubleshooting:
           - Kubernetes/CKA/troubleshooting/README.md
       - CKA Mock Exams:
