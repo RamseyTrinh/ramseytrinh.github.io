@@ -239,3 +239,23 @@ k exec pod-a -- wget -qO- --timeout=2 http://<pod-b-ip>
 | Ingress/Gateway | 4-6 min | Know ingressClassName |
 | Static pod | 3-4 min | Write manifest directly to `/etc/kubernetes/manifests/` |
 | Node drain/cordon | 2-3 min | `--ignore-daemonsets --delete-emptydir-data` |
+
+## Notes
+
+### Exam tips
+
+- Cần mẫu YAML (ví dụ sidecar): copy từ docs rồi sửa — tìm "sidecar containers" trên kubernetes.io.
+
+### ConfigMap / Secret
+
+- Dùng `envFrom` để load tất cả key từ ConfigMap hoặc Secret thành biến môi trường.
+- Dùng `volumes` + `volumeMounts` để mount ConfigMap thành file.
+
+#### envFrom vs env.valueFrom
+
+- `envFrom`: load TẤT CẢ key của ConfigMap/Secret thành biến môi trường (tên biến = tên key).
+- `env.valueFrom.configMapKeyRef` (hoặc `secretKeyRef`): load MỘT key duy nhất, và có thể đổi tên biến.
+- Trong đề thi:
+  - Nếu đề nói "load all keys" → dùng `envFrom`.
+  - Nếu đề nói "load KEY_X as MY_VAR" → dùng `valueFrom`.
+- Dùng ngược nhau sẽ KHÔNG báo lỗi, chỉ ra sai tên biến → dễ mất điểm mà không biết.
