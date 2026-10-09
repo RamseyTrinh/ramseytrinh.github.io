@@ -592,3 +592,17 @@ kubectl get nodes
 - Worker: drain → node → uncordon
 - Package đổi → daemon-reload → restart
 - Control plane trước → worker từng node một.
+
+### Cheatsheet
+
+| Problem | Kiểm tra đầu tiên |
+| --- | --- |
+| Node NotReady | `systemctl status kubelet` |
+| Kubelet lỗi | `journalctl -u kubelet` |
+| DNS không resolve | `cat /etc/resolv.conf` |
+| Test DNS | `nslookup kubernetes` |
+| CoreDNS | `k get pods -n kube-system` |
+| kube-proxy | `k get ds -n kube-system \| grep proxy` |
+| Service networking | `iptables-save \| grep <service>` |
+| Audit | `kube-apiserver.yaml` |
+| Tìm delete event | `grep 'verb.*delete' audit.log` |
