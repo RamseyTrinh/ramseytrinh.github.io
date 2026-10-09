@@ -259,3 +259,325 @@ k exec pod-a -- wget -qO- --timeout=2 http://<pod-b-ip>
   - Nếu đề nói "load all keys" → dùng `envFrom`.
   - Nếu đề nói "load KEY_X as MY_VAR" → dùng `valueFrom`.
 - Dùng ngược nhau sẽ KHÔNG báo lỗi, chỉ ra sai tên biến → dễ mất điểm mà không biết.
+
+### Kubeadm Upgrade
+
+Bài này chủ yếu cần nhớ sequence nâng Kubernetes cluster bằng kubeadm. Với CKA, quan trọng nhất là phân biệt control plane và worker.
+
+#### 1. Ý tưởng tổng quát
+
+Ví dụ cluster đang `v1.34.x`, muốn nâng lên `v1.35.x`. Luôn theo nguyên tắc:
+
+```
+CONTROL PLANE
+     ↓
+WORKER 1
+     ↓
+WORKER 2
+     ↓
+...
+```
+
+Không nâng worker trước control plane.
+
+#### 2. Control Plane upgrade
+
+Sequence cần thuộc:
+
+```
+kubeadm package
+    ↓
+kubeadm upgrade plan
+    ↓
+kubeadm upgrade apply v1.35.x
+    ↓
+kubelet + kubectl package
+    ↓
+systemctl daemon-reload
+    ↓
+systemctl restart kubelet
+```
+
+**Bước 1 — kiểm tra version**
+
+```bash
+k get nodes
+kubeadm version
+```
+
+Ví dụ:
+
+```
+NAME           STATUS   ROLES           VERSION
+controlplane   Ready    control-plane   v1.34.2
+node01         Ready    <none>          v1.34.2
+```
+
+**Bước 2 — upgrade kubeadm** (trên control plane)
+
+```bash
+apt update
+apt install kubeadm='1.35.x-*'
+kubeadm version
+```
+
+Lúc này kubeadm đã là version mới nhưng cluster chưa upgrade.
+
+**Bước 3 — xem upgrade có khả dụng không**
+
+```bash
+kubeadm upgrade plan
+```
+
+Nó cho bạn biết cluster hiện tại là gì và có thể upgrade lên version nào. Ví dụ:
+
+```
+Components that must be upgraded manually:
+COMPONENT   CURRENT   TARGET
+kubelet     1.34.x    1.35.x
+```
+
+**Bước 4 — upgrade control plane**
+
+Đây là command cực kỳ quan trọng:
+
+```bash
+kubeadm upgrade apply v1.35.x
+```
+
+Control plane → `apply`. Sau bước này, các Kubernetes control-plane components được nâng cấp.
+
+**Bước 5 — upgrade kubelet + kubectl**
+
+```bash
+apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+
+systemctl daemon-reload
+systemctl restart kubelet
+```
+
+!!! warning "CKA trap"
+    Đừng chỉ `systemctl restart kubelet`. Mà phải:
+
+    ```bash
+    systemctl daemon-reload
+    systemctl restart kubelet
+    ```
+
+    Vì package mới có thể thay đổi systemd unit file. Có thể nhớ: **Package changed → daemon-reload → restart**.
+
+#### 3. Worker upgrade
+
+Worker có sequence khác control plane một chút. Phải thuộc:
+
+```
+drain
+  ↓
+upgrade kubeadm
+  ↓
+upgrade kubelet + kubectl
+  ↓
+kubeadm upgrade node
+  ↓
+daemon-reload
+  ↓
+restart kubelet
+  ↓
+uncordon
+```
+
+**Bước 1 — Drain worker** (từ control plane)
+
+```bash
+kubectl drain node01 --ignore-daemonsets
+```
+
+Mục đích là di chuyển workload ra khỏi worker trước khi ta restart/upgrade nó. Đây là lý do drain phải xảy ra trước upgrade.
+
+**Bước 2 — SSH vào worker**
+
+```bash
+ssh node01
+
+apt update
+apt install kubeadm='1.35.x-*'
+apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+```
+
+**Bước 3 — kubeadm upgrade node**
+
+Đây là điểm rất dễ nhầm:
+
+| | Control plane | Worker |
+| --- | --- | --- |
+| Command | `kubeadm upgrade apply v1.35.x` | `kubeadm upgrade node` |
+
+Worker **KHÔNG** dùng `apply`.
+
+**Bước 4 — restart kubelet**
+
+```bash
+systemctl daemon-reload
+systemctl restart kubelet
+```
+
+**Bước 5 — quay lại control plane và uncordon**
+
+```bash
+kubectl uncordon node01
+```
+
+Node quay lại trạng thái có thể nhận workload.
+
+#### 4. Full workflow cần thuộc lòng
+
+Giả sử cluster có `controlplane`, `node01`, `node02`, upgrade từ `1.34 → 1.35`.
+
+Control plane:
+
+```bash
+apt update
+apt install kubeadm='1.35.x-*'
+
+kubeadm upgrade plan
+kubeadm upgrade apply v1.35.x
+
+apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+
+systemctl daemon-reload
+systemctl restart kubelet
+```
+
+Worker 1 (từ control plane rồi SSH vào worker):
+
+```bash
+# Control plane
+kubectl drain node01 --ignore-daemonsets
+
+# SSH vào worker
+apt update
+apt install kubeadm='1.35.x-*'
+apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+
+kubeadm upgrade node
+
+systemctl daemon-reload
+systemctl restart kubelet
+```
+
+Quay lại control plane:
+
+```bash
+kubectl uncordon node01
+```
+
+Sau đó làm tương tự với `node02`.
+
+#### 5. Vì sao phải làm theo thứ tự này?
+
+Có thể hiểu cluster upgrade thành 3 tầng:
+
+```
+        Kubernetes Control Plane
+                 ↑
+              kubeadm
+                 ↑
+          kubelet / kubectl
+                 ↑
+              Worker
+```
+
+Control plane trước, vì worker version mới cần tương thích với control plane mới. Do đó:
+
+```
+Control Plane 1.35
+       ↓
+Worker 1.35
+```
+
+chứ không phải:
+
+```
+Worker 1.35
+       ↓
+Control Plane 1.34
+```
+
+#### 6. Drain vs Cordon vs Uncordon
+
+Đây cũng là kiến thức CKA rất đáng nhớ.
+
+| Command | Hiệu ứng |
+| --- | --- |
+| `kubectl cordon node01` | Không cho pod mới được schedule vào node. Pod đang chạy vẫn tiếp tục chạy. |
+| `kubectl drain node01 --ignore-daemonsets` | Cordon node + evict các workload phù hợp khỏi node. Dùng khi chuẩn bị bảo trì/reboot/upgrade node. |
+| `kubectl uncordon node01` | Cho node nhận workload trở lại. |
+
+#### 7. Những lỗi bài này cố tình muốn bạn nhớ
+
+- ❌ **Sai 1**: `kubeadm upgrade apply` trên worker. → Đúng: `kubeadm upgrade node`
+- ❌ **Sai 2**: Upgrade worker trước rồi mới drain (upgrade → drain). → Đúng: drain → upgrade
+- ❌ **Sai 3**: `systemctl restart kubelet` ngay sau khi upgrade package. → Đúng: `systemctl daemon-reload` → `systemctl restart kubelet`
+- ❌ **Sai 4**: Upgrade tất cả worker cùng lúc. → Đúng: control plane → worker 1 → worker 2 → worker 3, one worker at a time.
+
+#### 8. Verify
+
+```bash
+kubectl get nodes
+```
+
+Ví dụ:
+
+```
+NAME           STATUS   ROLES           VERSION
+controlplane   Ready    control-plane   v1.35.x
+node01         Ready    <none>          v1.35.x
+node02         Ready    <none>          v1.35.x
+```
+
+Kiểm tra component:
+
+```bash
+kubeadm version
+kubelet --version
+kubectl version --client
+```
+
+#### 🧠 CKA cheat sheet
+
+Nếu vào CKA gặp "Upgrade Kubernetes cluster from X to Y", nghĩ ngay:
+
+```
+CONTROL PLANE
+────────────────────────────
+1. apt update
+2. upgrade kubeadm
+3. kubeadm upgrade plan
+4. kubeadm upgrade apply v1.35.x
+5. upgrade kubelet + kubectl
+6. daemon-reload
+7. restart kubelet
+
+
+WORKER
+────────────────────────────
+1. kubectl drain NODE
+2. upgrade kubeadm
+3. upgrade kubelet + kubectl
+4. kubeadm upgrade node
+5. daemon-reload
+6. restart kubelet
+7. kubectl uncordon NODE
+
+
+VERIFY
+────────────────────────────
+kubectl get nodes
+```
+
+**Câu thần chú để nhớ:**
+
+- Control plane: plan → apply
+- Worker: drain → node → uncordon
+- Package đổi → daemon-reload → restart
+- Control plane trước → worker từng node một.
