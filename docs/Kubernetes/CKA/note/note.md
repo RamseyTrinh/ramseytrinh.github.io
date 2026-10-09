@@ -153,7 +153,18 @@ spec:
 ```
 
 Effects: `NoSchedule` (block new pods) · `PreferNoSchedule` (soft avoid) · `NoExecute` (also evicts existing pods).
-6. Static pods: cat /var/lib/kubelet/config.yaml | grep staticPodPath # Find the static pod path
+6. Static pods: managed directly by the kubelet on a node (not by the API server/scheduler). The kubelet watches a directory and auto-creates/restarts a pod for every manifest file dropped there.
+
+- Default manifest directory is usually `/etc/kubernetes/manifests/`, but it's **not guaranteed** — it's whatever the kubelet is configured with.
+
+!!! warning "Verify the actual staticPodPath"
+    Forgot to check the actual path on the node. Placed the manifest in the "usual" spot, but the kubelet was configured to look elsewhere. Always verify:
+
+    ```bash
+    cat /var/lib/kubelet/config.yaml | grep staticPodPath
+    ```
+
+    Paths are configurable and exam clusters might differ from defaults. A typo in the path means the pod never appears — and the kubelet won't error loudly about it, so it's easy to miss.
 
 ### Domain 4 — Cluster Architecture, Installation & Configuration
 1. RBAC has four objects:
