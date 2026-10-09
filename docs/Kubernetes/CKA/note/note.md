@@ -28,6 +28,12 @@
 
 On the exam: know the difference between **Retain** and **Delete**. If the question says data should persist after PVC deletion, use **Retain**.
 
+!!! warning "Pod Readiness Proves Storage Works"
+    "PVC is Bound" looks good on paper, but until you attach a Pod and it becomes Running, you haven't proven the storage actually works. A Pod staying Pending means either: (a) the PVC isn't Bound, (b) the hostPath doesn't exist on the node, (c) permissions are wrong, or (d) scheduling constraints prevent placement. Always verify the consumer Pod reaches Running state — that's your real test.
+
+!!! warning "hostPath Directory Must Exist on Node"
+    Created PV with `hostPath: /data/exercise-12` but forgot to `mkdir -p /data/exercise-12` on the node. Pod stayed Pending. The node has to have the backing directory, and if running on a multi-node cluster, the Pod might land on a node that doesn't have it. Consider this when designing storage tests.
+
 ### Domain 2: Troubleshoots
 1. Check container crashed: k logs <pod-name> --previous                 # crashed container — you'll use this a lot
 2. Check certificated cluster expired: sudo kubeadm certs check-expiration
