@@ -644,3 +644,50 @@ flowchart LR
 
 !!! tip "Điểm quan trọng nhất"
     `GatewayClass` xác định **Gateway Controller** nào sẽ quản lý `Gateway` đó — nó không tham gia vào đường đi của request thực tế.
+
+### HPA vs VPA
+
+- **HPA** (Horizontal Pod Autoscaler): scale **số lượng replicas** theo metric (CPU/memory). CPU vượt target → tạo thêm pod, load giảm → giảm pod.
+- **VPA** (Vertical Pod Autoscaler): chỉnh **requests/limits** của pod hiện có theo usage thực tế (không đổi số replicas) — tối ưu bin-packing, giảm lãng phí.
+- CKA chỉ test **HPA**, nhưng hiểu VPA giúp tư duy resource efficiency.
+
+**Setup nhanh:**
+
+```bash
+k autoscale deployment load-app --cpu-percent=50 --min=1 --max=5
+```
+
+**Pre-flight checklist (giải quyết 80% lỗi HPA):**
+
+```bash
+# 1. metrics-server đang chạy?
+k get deployment -n kube-system metrics-server
+
+# 2. kubectl top có hoạt động?
+k top nodes
+k top pods -n <ns>          # "metrics not available" → chờ ~60s
+
+# 3. Deployment có resource requests chưa?
+k get deployment load-app -o json | jq '.spec.template.spec.containers[0].resources'
+# {} rỗng → đây là lý do HPA hiện <unknown>
+
+# 4. HPA đang watch đúng target.type chưa?
+k get hpa -o yaml | grep -A5 "metrics:"
+# Phải là type: Utilization (KHÔNG phải AverageValue)
+
+# 5. HPA có metric hợp lệ chưa?
+k get hpa     # TARGETS phải là "x%/50%", không phải "<unknown>/50%"
+```
+
+**Target type dễ nhầm:**
+
+| Type | Ý nghĩa |
+| --- | --- |
+| `type: Utilization` + `averageUtilization: 50` | Scale khi CPU dùng = 50% so với **request** (ví dụ request 100m, dùng 50m → 50%). Đây là cái đề thi hay test. |
+| `type: Value` + `averageValue: 50m` | Scale khi pod dùng đúng 50m CPU tuyệt đối. Ít gặp hơn. |
+
+!!! warning "Những cái từng bị dính"
+    - **Thiếu resource requests → metric `<unknown>`**: HPA tính % dựa trên CPU **request**, không có request = không có baseline. Luôn set `resources.requests.cpu` cho pod cần autoscale.
+    - **`target.type: AverageValue` thay vì `Utilization`**: metrics-server không tính được AverageValue cho CPU (đó là cho custom metrics) → HPA đứng im ở `<unknown>`. Với CPU phải dùng `Utilization`.
+    - **Scale-down chậm là bình thường**: mặc định HPA đợi ~5 phút sau khi load giảm mới scale down (tránh flapping) — không phải bug.
+    - **metrics-server không tự có sẵn trên kubeadm cluster**: nếu `k top pods` lỗi, cài bằng `k apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml`.
