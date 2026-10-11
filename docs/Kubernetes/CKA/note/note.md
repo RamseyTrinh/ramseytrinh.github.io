@@ -262,6 +262,19 @@ k exec pod-a -- wget -qO- --timeout=2 http://<pod-b-ip>
 ### Exam tips
 
 - Cần mẫu YAML (ví dụ sidecar): copy từ docs rồi sửa — tìm "sidecar containers" trên kubernetes.io.
+- Troubleshooting
+
+| Problem | Kiểm tra đầu tiên |
+| --- | --- |
+| Node NotReady | `systemctl status kubelet` |
+| Kubelet lỗi | `journalctl -u kubelet` |
+| DNS không resolve | `cat /etc/resolv.conf` |
+| Test DNS | `nslookup kubernetes` |
+| CoreDNS | `k get pods -n kube-system` |
+| kube-proxy | `k get ds -n kube-system \| grep proxy` |
+| Service networking | `iptables-save \| grep <service>` |
+| Audit | `kube-apiserver.yaml` |
+| Tìm delete event | `grep 'verb.*delete' audit.log` |
 
 ### ConfigMap / Secret
 
@@ -490,77 +503,7 @@ kubectl uncordon node01
 
 Sau đó làm tương tự với `node02`.
 
-#### 5. Vì sao phải làm theo thứ tự này?
-
-Có thể hiểu cluster upgrade thành 3 tầng:
-
-```
-        Kubernetes Control Plane
-                 ↑
-              kubeadm
-                 ↑
-          kubelet / kubectl
-                 ↑
-              Worker
-```
-
-Control plane trước, vì worker version mới cần tương thích với control plane mới. Do đó:
-
-```
-Control Plane 1.35
-       ↓
-Worker 1.35
-```
-
-chứ không phải:
-
-```
-Worker 1.35
-       ↓
-Control Plane 1.34
-```
-
-#### 6. Drain vs Cordon vs Uncordon
-
-Đây cũng là kiến thức CKA rất đáng nhớ.
-
-| Command | Hiệu ứng |
-| --- | --- |
-| `kubectl cordon node01` | Không cho pod mới được schedule vào node. Pod đang chạy vẫn tiếp tục chạy. |
-| `kubectl drain node01 --ignore-daemonsets` | Cordon node + evict các workload phù hợp khỏi node. Dùng khi chuẩn bị bảo trì/reboot/upgrade node. |
-| `kubectl uncordon node01` | Cho node nhận workload trở lại. |
-
-#### 7. Những lỗi bài này cố tình muốn bạn nhớ
-
-- ❌ **Sai 1**: `kubeadm upgrade apply` trên worker. → Đúng: `kubeadm upgrade node`
-- ❌ **Sai 2**: Upgrade worker trước rồi mới drain (upgrade → drain). → Đúng: drain → upgrade
-- ❌ **Sai 3**: `systemctl restart kubelet` ngay sau khi upgrade package. → Đúng: `systemctl daemon-reload` → `systemctl restart kubelet`
-- ❌ **Sai 4**: Upgrade tất cả worker cùng lúc. → Đúng: control plane → worker 1 → worker 2 → worker 3, one worker at a time.
-
-#### 8. Verify
-
-```bash
-kubectl get nodes
-```
-
-Ví dụ:
-
-```
-NAME           STATUS   ROLES           VERSION
-controlplane   Ready    control-plane   v1.35.x
-node01         Ready    <none>          v1.35.x
-node02         Ready    <none>          v1.35.x
-```
-
-Kiểm tra component:
-
-```bash
-kubeadm version
-kubelet --version
-kubectl version --client
-```
-
-#### 🧠 CKA cheat sheet
+#### 🧠 CKA cheat sheet Upgrade Kubernetes
 
 Nếu vào CKA gặp "Upgrade Kubernetes cluster from X to Y", nghĩ ngay:
 
@@ -598,20 +541,6 @@ kubectl get nodes
 - Worker: drain → node → uncordon
 - Package đổi → daemon-reload → restart
 - Control plane trước → worker từng node một.
-
-### Cheatsheet
-
-| Problem | Kiểm tra đầu tiên |
-| --- | --- |
-| Node NotReady | `systemctl status kubelet` |
-| Kubelet lỗi | `journalctl -u kubelet` |
-| DNS không resolve | `cat /etc/resolv.conf` |
-| Test DNS | `nslookup kubernetes` |
-| CoreDNS | `k get pods -n kube-system` |
-| kube-proxy | `k get ds -n kube-system \| grep proxy` |
-| Service networking | `iptables-save \| grep <service>` |
-| Audit | `kube-apiserver.yaml` |
-| Tìm delete event | `grep 'verb.*delete' audit.log` |
 
 ### HPA vs VPA
 
@@ -660,31 +589,6 @@ k get hpa     # TARGETS phải là "x%/50%", không phải "<unknown>/50%"
     - **Scale-down chậm là bình thường**: mặc định HPA đợi ~5 phút sau khi load giảm mới scale down (tránh flapping) — không phải bug.
     - **metrics-server không tự có sẵn trên kubeadm cluster**: nếu `k top pods` lỗi, cài bằng `k apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml`.
 
-### Ingress: Control path vs Data path
-
-Giống `GatewayClass`, Ingress cũng nên tách thành 2 luồng riêng: cấu hình (control/config) và request thực tế (data path).
-
-```mermaid
-flowchart LR
-    subgraph CP["Control / Config"]
-        direction TB
-        ING1["Ingress"] -- backend --> SVC1["Service"]
-        SVC1 -- selector --> EPS["EndpointSlice"]
-        EPS --> POD1["Pod"]
-    end
-
-    subgraph DP["Data path"]
-        direction LR
-        C["Client"] --> LB["LoadBalancer / NodePort"] --> IC["Ingress Controller"] --> IR["Ingress rule"] --> SVC2["Service"] --> POD2["Pod"]
-    end
-```
-
-- **Control/Config**: `Ingress → (backend) → Service → (selector) → EndpointSlice → Pod` — đây là cách Ingress "biết" request nên đi đâu.
-- **Data path**: `Client → LoadBalancer/NodePort → Ingress Controller → Ingress rule → Service → Pod` — đây là đường đi thật của request.
-
-!!! tip
-    `Ingress` resource chỉ là **config** (rule), còn **Ingress Controller** mới là thành phần thực sự nhận và route traffic. Thiếu Controller thì Ingress rule không chạy.
-
 ## Alternative
 
 ### GatewayClass
@@ -703,12 +607,6 @@ flowchart LR
         direction LR
         U["👤 User"] --> LB["🌐 External LB"] --> GW2["🚪 Gateway :80"] --> HR2["🛣️ HTTPRoute /"] --> SVC["🔌 Service :80"] --> POD["📦 Pod :80"]
     end
-```
-
-**Đừng nhớ:**
-
-```
-❌ User → GatewayClass → Gateway → ...
 ```
 
 **Mà nhớ theo 2 luồng riêng:**
@@ -787,8 +685,6 @@ systemctl status kubelet
 **1. PSS là gì?**
 
 PSS (Pod Security Standards) = bộ tiêu chuẩn quy định Pod được phép chạy với mức quyền nào. Kubernetes dùng **Pod Security Admission (PSA)** để kiểm tra Pod theo PSS.
-
-🧠 PSS = luật bảo mật cho Pod.
 
 **2. PSS có 3 LEVEL**
 
