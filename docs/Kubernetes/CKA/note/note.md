@@ -613,38 +613,6 @@ kubectl get nodes
 | Audit | `kube-apiserver.yaml` |
 | Tìm delete event | `grep 'verb.*delete' audit.log` |
 
-### GatewayClass
-
-`GatewayClass` không phải một bước request đi qua — nó nằm **ngoài luồng request**, chỉ xác định Gateway Controller nào quản lý `Gateway`.
-
-```mermaid
-flowchart LR
-    subgraph CP["Control plane / configuration"]
-        direction TB
-        GC["GatewayClass<br/>Which controller manages Gateway?"] -- manages --> GW1["Gateway"]
-        GW1 -- parentRef --> HR1["HTTPRoute"]
-    end
-
-    subgraph DP["Data plane / request"]
-        direction LR
-        U["👤 User"] --> LB["🌐 External LB"] --> GW2["🚪 Gateway :80"] --> HR2["🛣️ HTTPRoute /"] --> SVC["🔌 Service :80"] --> POD["📦 Pod :80"]
-    end
-```
-
-**Đừng nhớ:**
-
-```
-❌ User → GatewayClass → Gateway → ...
-```
-
-**Mà nhớ theo 2 luồng riêng:**
-
-- Control plane: `GatewayClass → (manages) → Gateway → (parentRef) → HTTPRoute`
-- Data plane (request thực tế): `👤 User → 🌐 LB → 🚪 Gateway → 🛣️ HTTPRoute → 🔌 Service → 📦 Pod`
-
-!!! tip "Điểm quan trọng nhất"
-    `GatewayClass` xác định **Gateway Controller** nào sẽ quản lý `Gateway` đó — nó không tham gia vào đường đi của request thực tế.
-
 ### HPA vs VPA
 
 - **HPA** (Horizontal Pod Autoscaler): scale **số lượng replicas** theo metric (CPU/memory). CPU vượt target → tạo thêm pod, load giảm → giảm pod.
@@ -691,3 +659,241 @@ k get hpa     # TARGETS phải là "x%/50%", không phải "<unknown>/50%"
     - **`target.type: AverageValue` thay vì `Utilization`**: metrics-server không tính được AverageValue cho CPU (đó là cho custom metrics) → HPA đứng im ở `<unknown>`. Với CPU phải dùng `Utilization`.
     - **Scale-down chậm là bình thường**: mặc định HPA đợi ~5 phút sau khi load giảm mới scale down (tránh flapping) — không phải bug.
     - **metrics-server không tự có sẵn trên kubeadm cluster**: nếu `k top pods` lỗi, cài bằng `k apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml`.
+
+### Ingress: Control path vs Data path
+
+Giống `GatewayClass`, Ingress cũng nên tách thành 2 luồng riêng: cấu hình (control/config) và request thực tế (data path).
+
+```mermaid
+flowchart LR
+    subgraph CP["Control / Config"]
+        direction TB
+        ING1["Ingress"] -- backend --> SVC1["Service"]
+        SVC1 -- selector --> EPS["EndpointSlice"]
+        EPS --> POD1["Pod"]
+    end
+
+    subgraph DP["Data path"]
+        direction LR
+        C["Client"] --> LB["LoadBalancer / NodePort"] --> IC["Ingress Controller"] --> IR["Ingress rule"] --> SVC2["Service"] --> POD2["Pod"]
+    end
+```
+
+- **Control/Config**: `Ingress → (backend) → Service → (selector) → EndpointSlice → Pod` — đây là cách Ingress "biết" request nên đi đâu.
+- **Data path**: `Client → LoadBalancer/NodePort → Ingress Controller → Ingress rule → Service → Pod` — đây là đường đi thật của request.
+
+!!! tip
+    `Ingress` resource chỉ là **config** (rule), còn **Ingress Controller** mới là thành phần thực sự nhận và route traffic. Thiếu Controller thì Ingress rule không chạy.
+
+## Alternative
+
+### GatewayClass
+
+`GatewayClass` không phải một bước request đi qua — nó nằm **ngoài luồng request**, chỉ xác định Gateway Controller nào quản lý `Gateway`.
+
+```mermaid
+flowchart LR
+    subgraph CP["Control plane / configuration"]
+        direction TB
+        GC["GatewayClass<br/>Which controller manages Gateway?"] -- manages --> GW1["Gateway"]
+        GW1 -- parentRef --> HR1["HTTPRoute"]
+    end
+
+    subgraph DP["Data plane / request"]
+        direction LR
+        U["👤 User"] --> LB["🌐 External LB"] --> GW2["🚪 Gateway :80"] --> HR2["🛣️ HTTPRoute /"] --> SVC["🔌 Service :80"] --> POD["📦 Pod :80"]
+    end
+```
+
+**Đừng nhớ:**
+
+```
+❌ User → GatewayClass → Gateway → ...
+```
+
+**Mà nhớ theo 2 luồng riêng:**
+
+- Control plane: `GatewayClass → (manages) → Gateway → (parentRef) → HTTPRoute`
+- Data plane (request thực tế): `👤 User → 🌐 LB → 🚪 Gateway → 🛣️ HTTPRoute → 🔌 Service → 📦 Pod`
+
+!!! tip "Điểm quan trọng nhất"
+    `GatewayClass` xác định **Gateway Controller** nào sẽ quản lý `Gateway` đó — nó không tham gia vào đường đi của request thực tế.
+
+### kubectl debug
+
+`kubectl debug` dùng để troubleshoot Pod đang chạy hoặc debug trực tiếp Node. Có 2 loại cần phân biệt rõ.
+
+#### 1. Debug Pod
+
+```bash
+k create ns exercise-17
+k run broken-app -n exercise-17 --image=nginx:1.27
+
+# Attach debug container
+k debug broken-app -n exercise-17 -it --image=busybox:1.36 --target=broken-app
+```
+
+Trong debug container, chạy `ps aux` — phải thấy process của nginx.
+
+!!! tip "⭐ `--target` là bắt buộc"
+    - Không có `--target` → debug container có process namespace riêng → **không** thấy process nginx.
+    - Có `--target=broken-app` → debug container **share process namespace** với container đó → thấy process nginx.
+    - Câu nhớ: `--target` = "Tôi muốn debug process của container nào?"
+
+#### 2. Debug Node
+
+```bash
+k debug node/<node-name> -it --image=busybox:1.36
+```
+
+Trong debug container, filesystem của Node được mount tại `/host`:
+
+```bash
+ls /host
+chroot /host          # giờ đang ở filesystem Node thật
+systemctl status kubelet
+```
+
+!!! tip "⭐ `chroot /host` là bắt buộc"
+    - Không `chroot /host` → chỉ thấy filesystem của **debug container**, không phải Node.
+    - `chroot /host` → biến `/host` (kubelet, systemd, `/etc`, `/var`, ...) thành root filesystem hiện tại.
+    - Câu nhớ: `/host` = filesystem Node → `chroot /host` = đổi root sang Node thật.
+
+#### 3. So sánh 2 loại debug
+
+| | Pod Debug | Node Debug |
+| --- | --- | --- |
+| Command | `k debug <pod>` | `k debug node/<node>` |
+| Mục đích | Debug container | Debug Node |
+| Quan trọng nhất | `--target` | `chroot /host` |
+| Kiểm tra | `ps aux` | `systemctl status kubelet` |
+| Network | Network namespace của Pod | Network namespace của Node |
+
+#### 4. Network namespace cũng khác nhau
+
+- **Pod debug**: đang ở network namespace của Pod → `curl localhost:80` kiểm tra nginx trong Pod.
+- **Node debug**: `localhost` lúc này là **Node**, không phải Pod. Muốn test Service/Pod phải dùng IP cụ thể: `curl <service-ip>` hoặc `curl <pod-ip>:80`.
+
+!!! warning "CKA Traps"
+    - **Trap 1 — Quên `--target`**: `k debug broken-app -it --image=busybox:1.36` chạy được nhưng không thấy nginx process.
+    - **Trap 2 — Quên `chroot /host`**: `k debug node/node01 -it --image=busybox:1.36` → vẫn đang ở filesystem của debug container, phải `chroot /host` mới đúng.
+    - **Trap 3 — Pod nhiều container**: `--target=container-a` chỉ share process namespace với `container-a`, không phải toàn bộ Pod.
+    - **Trap 4 — Image chưa có sẵn**: `--image=busybox:1.36` có thể phải pull; nếu node không có internet/cache thì debug container có thể không start.
+
+**Câu thần chú:** `Pod = --target` · `Node = chroot /host`
+
+### Pod Security Standards (PSS)
+
+**1. PSS là gì?**
+
+PSS (Pod Security Standards) = bộ tiêu chuẩn quy định Pod được phép chạy với mức quyền nào. Kubernetes dùng **Pod Security Admission (PSA)** để kiểm tra Pod theo PSS.
+
+🧠 PSS = luật bảo mật cho Pod.
+
+**2. PSS có 3 LEVEL**
+
+| Level | Mức độ | Ý nghĩa |
+| --- | --- | --- |
+| `privileged` | 🔓 Thấp nhất | Gần như không hạn chế |
+| `baseline` | 🟡 Trung bình | Chặn các cấu hình nguy hiểm phổ biến |
+| `restricted` | 🔴 Cao nhất | Hardening mạnh, yêu cầu Pod an toàn hơn |
+
+Nhớ: `privileged → baseline → restricted` (ít → nhiều security).
+
+**3. PSS có 3 MODE**
+
+Mode quyết định Kubernetes làm gì khi Pod vi phạm policy.
+
+| Mode | Khi vi phạm |
+| --- | --- |
+| `enforce` | ❌ **BLOCK** Pod |
+| `audit` | 📝 Cho chạy + **RECORD** violation |
+| `warn` | ⚠️ Cho chạy + **TELL** user |
+
+**4. LEVEL ≠ MODE** — rất dễ nhầm trong CKA
+
+```yaml
+pod-security.kubernetes.io/enforce: restricted
+#                           ^mode     ^level
+```
+
+- `enforce` = **MODE** (xử lý violation như thế nào?)
+- `restricted` = **LEVEL** (policy nghiêm đến đâu?)
+
+**5. Namespace là nơi cấu hình PSS**
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secure-ns
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+```
+
+Có thể cấu hình cả 3 mode cùng lúc:
+
+```yaml
+labels:
+  pod-security.kubernetes.io/enforce: restricted
+  pod-security.kubernetes.io/audit: restricted
+  pod-security.kubernetes.io/warn: restricted
+```
+
+!!! warning "Prefix phải chính xác"
+    Phải là `pod-security.kubernetes.io/`, **không phải** `pod-security/`.
+
+**6. `privileged` có 2 nghĩa khác nhau — trap quan trọng**
+
+- **PSS level**: `pod-security.kubernetes.io/enforce: privileged` → policy gần như không hạn chế.
+- **Container securityContext**: `securityContext.privileged: true` → yêu cầu container chạy với quyền privileged.
+
+Hai cái này **không phải một**.
+
+**7. Ví dụ**
+
+Namespace: `pod-security.kubernetes.io/enforce: baseline`. Pod có `securityContext.privileged: true`.
+
+```
+Pod → PSA → Namespace policy = baseline → privileged: true?
+  → ❌ Vi phạm baseline → enforce → ❌ Pod bị reject
+```
+
+**8. `audit` không có nghĩa là block**
+
+Namespace chỉ có `pod-security.kubernetes.io/audit: restricted` (không có `enforce`):
+
+```
+Pod → PSA → restricted violation → audit → ✅ Pod vẫn được tạo, 📝 violation được ghi nhận
+```
+
+!!! warning "Trap trong lab"
+    Nếu Namespace có **cả** `enforce: restricted` **và** `audit: restricted`, Pod vi phạm vẫn **bị block** bởi `enforce`. Muốn test audit-only thì không được có `enforce` chặn nó.
+
+**9. `restricted` thường yêu cầu Pod hardening**
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+```
+
+Ngoài ra còn các yêu cầu khác (capabilities, seccomp...) và có thể thay đổi theo Kubernetes/PSS version.
+
+!!! warning
+    Khi gặp câu hỏi yêu cầu exact requirement của `restricted`, kiểm tra đúng version Kubernetes.
+
+**10. PSS kiểm tra ở đâu?**
+
+Policy nằm ở **Namespace** (qua labels), nhưng PSA kiểm tra cấu hình thực tế của **Pod/container** (securityContext, capabilities, privilege, ...).
+
+**11. Pod đang chạy (existing Pod)**
+
+PSS chủ yếu áp dụng khi Pod được **create/update**. Nếu Namespace đổi policy, Pod đang chạy **không tự nhiên bị kill**. Muốn test lại policy: `k delete pod <pod>` rồi tạo lại.
+
+!!! tip "CKA cheat sheet"
+    - **LEVEL** = nghiêm đến đâu? → `privileged` / `baseline` / `restricted`
+    - **MODE** = violation xử lý thế nào? → `enforce` (BLOCK) / `audit` (RECORD) / `warn` (TELL)
+    - Câu thần chú: **LEVEL = How strict? · MODE = What to do?**
+    - Và đặc biệt: `privileged` level **≠** `securityContext.privileged: true` — 2 thứ khác nhau.
