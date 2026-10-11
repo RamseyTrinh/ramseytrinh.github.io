@@ -612,3 +612,35 @@ kubectl get nodes
 | Service networking | `iptables-save \| grep <service>` |
 | Audit | `kube-apiserver.yaml` |
 | Tìm delete event | `grep 'verb.*delete' audit.log` |
+
+### GatewayClass
+
+`GatewayClass` không phải một bước request đi qua — nó nằm **ngoài luồng request**, chỉ xác định Gateway Controller nào quản lý `Gateway`.
+
+```mermaid
+flowchart LR
+    subgraph CP["Control plane / configuration"]
+        direction TB
+        GC["GatewayClass<br/>Which controller manages Gateway?"] -- manages --> GW1["Gateway"]
+        GW1 -- parentRef --> HR1["HTTPRoute"]
+    end
+
+    subgraph DP["Data plane / request"]
+        direction LR
+        U["👤 User"] --> LB["🌐 External LB"] --> GW2["🚪 Gateway :80"] --> HR2["🛣️ HTTPRoute /"] --> SVC["🔌 Service :80"] --> POD["📦 Pod :80"]
+    end
+```
+
+**Đừng nhớ:**
+
+```
+❌ User → GatewayClass → Gateway → ...
+```
+
+**Mà nhớ theo 2 luồng riêng:**
+
+- Control plane: `GatewayClass → (manages) → Gateway → (parentRef) → HTTPRoute`
+- Data plane (request thực tế): `👤 User → 🌐 LB → 🚪 Gateway → 🛣️ HTTPRoute → 🔌 Service → 📦 Pod`
+
+!!! tip "Điểm quan trọng nhất"
+    `GatewayClass` xác định **Gateway Controller** nào sẽ quản lý `Gateway` đó — nó không tham gia vào đường đi của request thực tế.
