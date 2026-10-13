@@ -1,3 +1,8 @@
+## Need practice
+1. etcd Backup & Restore
+2. kubeadm Upgrade
+
+
 ## Syllabus
 ### Domain 1: 
 1. PV is cluster-scoped (no namespace). PVC is namespace-scoped
@@ -322,6 +327,28 @@ k get pods -A
 ```
 
 Dấu hiệu cluster healthy: `k get nodes` chạy được, `k get pods -A` chạy được, API server pod ở trạng thái `Running`.
+
+- Troubleshooting Sequence
+```bash
+k get nodes                              # 1. Nodes ready?
+k get pods -n kube-system                # 2. Control plane pods?
+ssh <node> -- systemctl status kubelet   # 3. kubelet running?
+ssh <node> -- journalctl -u kubelet      # 4. kubelet logs?
+k describe pod <pod>                     # 5. Events?
+k logs <pod> --previous                  # 6. Previous crash logs?
+k get endpoints <svc>                    # 7. Service has endpoints?
+k get netpol -A    
+```
+
+- Static pods
+```bash
+# Find path
+cat /var/lib/kubelet/config.yaml | grep staticPodPath
+# Default: /etc/kubernetes/manifests/
+
+# Create: write YAML to that directory
+# Delete: remove the file (kubectl delete won't work)
+```
 
 ### ConfigMap / Secret
 

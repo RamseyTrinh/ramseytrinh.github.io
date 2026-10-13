@@ -53,6 +53,8 @@ nav:
           - Kubernetes/CKA/note/note.md
       - CKA Troubleshooting:
           - Kubernetes/CKA/troubleshooting/README.md
+      - CKA Exam Setup:
+          - Kubernetes/CKA/exam-setup/init.md
       - CKA Mock Exams:
           - Kubernetes/CKA/mock-exams/README.md
           - Kubernetes/CKA/mock-exams/MOCK-EXAM-01.md
