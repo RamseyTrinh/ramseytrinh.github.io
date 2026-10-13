@@ -74,6 +74,10 @@ bash scripts/run-mock-exam.sh 2 90  # Mock Exam 02, 90 phút
 
 - Những câu cần **kubeadm upgrade thật** hoặc nhiều VM sẽ không mô phỏng trọn vẹn trên kind được. Với các câu này, dùng **killer.sh** (đi kèm khi mua voucher CKA) là sát đề thật nhất.
 
+## Setup riêng cho từng đề
+
+- [Mock Exam 01](mock-exam-01.md): script tạo sẵn tài nguyên mà đề coi là đã có.
+
 ## Dọn dẹp
 
 ```bash

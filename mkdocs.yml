@@ -55,6 +55,7 @@ nav:
           - Kubernetes/CKA/troubleshooting/README.md
       - CKA Exam Setup:
           - Kubernetes/CKA/exam-setup/init.md
+          - Kubernetes/CKA/exam-setup/mock-exam-01.md
       - CKA Mock Exams:
           - Kubernetes/CKA/mock-exams/README.md
           - Kubernetes/CKA/mock-exams/MOCK-EXAM-01.md
