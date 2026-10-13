@@ -262,6 +262,17 @@ k exec pod-a -- wget -qO- --timeout=2 http://<pod-b-ip>
 ### Exam tips
 
 - Cần mẫu YAML (ví dụ sidecar): copy từ docs rồi sửa — tìm "sidecar containers" trên kubernetes.io.
+- `kubectl patch` — sửa nhanh 1 field của resource đang chạy mà không cần sửa lại cả YAML:
+
+```bash
+# Cú pháp tổng quát
+k patch <resource-type> <name> -p '{"spec":{"template":{"spec":{"FIELD":"VALUE"}}}}'
+
+# Ví dụ: patch priorityClassName vào Deployment
+k patch deployment <name> \
+  -p '{"spec":{"template":{"spec":{"priorityClassName":"high-priority"}}}}'
+```
+
 - Troubleshooting
 
 | Problem | Kiểm tra đầu tiên |
@@ -276,6 +287,42 @@ k exec pod-a -- wget -qO- --timeout=2 http://<pod-b-ip>
 | Audit | `kube-apiserver.yaml` |
 | Tìm delete event | `grep 'verb.*delete' audit.log` |
 
+- Test networking:
+
+```bash
+k run test1 --image=busybox:1.36 -- sleep 3600
+k run test2 --image=busybox:1.36 -- sleep 3600
+
+# Get IPs
+POD1=$(k get pod test1 -o jsonpath='{.status.podIP}')
+POD2=$(k get pod test2 -o jsonpath='{.status.podIP}')
+
+# Test connectivity
+k exec deploy/test1 -- ping -c 1 $POD2
+```
+
+- Troubleshoot etcd — cluster is broken, API server won't start:
+
+```bash
+# 1. Check kube-apiserver pod logs → tìm lỗi (ví dụ: sai etcd endpoint IP/port)
+k logs -n kube-system kube-apiserver-<node> --previous
+
+# 2. SSH vào control plane node, sửa etcd endpoint
+vi /etc/kubernetes/manifests/kube-apiserver.yaml
+# sửa flag --etcd-servers=
+
+# 3. Verify IP/port khớp với etcd manifest
+cat /etc/kubernetes/manifests/etcd.yaml
+
+# 4. Save → kubelet tự restart static pod API server
+
+# 5. Verify cluster healthy
+k get nodes
+k get pods -A
+```
+
+Dấu hiệu cluster healthy: `k get nodes` chạy được, `k get pods -A` chạy được, API server pod ở trạng thái `Running`.
+
 ### ConfigMap / Secret
 
 - Dùng `envFrom` để load tất cả key từ ConfigMap hoặc Secret thành biến môi trường.
@@ -289,6 +336,26 @@ k exec pod-a -- wget -qO- --timeout=2 http://<pod-b-ip>
   - Nếu đề nói "load all keys" → dùng `envFrom`.
   - Nếu đề nói "load KEY_X as MY_VAR" → dùng `valueFrom`.
 - Dùng ngược nhau sẽ KHÔNG báo lỗi, chỉ ra sai tên biến → dễ mất điểm mà không biết.
+
+### CNI
+
+Install CNI (ví dụ Calico) — các bước/hints hay dùng:
+
+```bash
+# Get cluster CIDR
+k describe cm kubeadm-config -n kube-system | grep pod-network-cidr
+
+# Alternative (nếu không có configmap)
+ps aux | grep kube-controller-manager | grep cidr
+
+# Wait for CNI pods ready
+k get pods -n calico-system -w
+
+# Test pod networking
+k run test --image=busybox:1.36 --rm -it -- ping <pod-ip>
+```
+
+Tigera (Calico) docs: https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/onpremises
 
 ### Kubeadm Upgrade
 
@@ -793,3 +860,215 @@ PSS chủ yếu áp dụng khi Pod được **create/update**. Nếu Namespace �
     - **MODE** = violation xử lý thế nào? → `enforce` (BLOCK) / `audit` (RECORD) / `warn` (TELL)
     - Câu thần chú: **LEVEL = How strict? · MODE = What to do?**
     - Và đặc biệt: `privileged` level **≠** `securityContext.privileged: true` — 2 thứ khác nhau.
+
+### PriorityClass
+
+```
+PriorityClass
+│
+├── value
+│     └── số càng lớn → priority càng cao
+│
+├── preemptionPolicy
+│     ├── PreemptLowerPriority → có thể đuổi Pod thấp hơn
+│     └── Never                → không preempt
+│
+└── priorityClassName
+      └── gán vào Pod
+```
+
+!!! warning "Chọn value sai khi đề yêu cầu \"high priority\""
+    Dùng `value` thấp (ví dụ `100`) khi đề nói "high priority". Thang giá trị thực tế:
+
+    | Priority | Value |
+    | --- | --- |
+    | `system-cluster-critical` | 2000000000 |
+    | `system-node-critical` | 2000001000 |
+    | User-defined (thường) | 0 – 1000000 |
+
+    Nên chọn `value` gần mức tối đa cho user-defined (ví dụ `999999`) để đảm bảo Pod được schedule trước, ngay cả khi cluster đang thiếu resource — vì scheduler chọn ưu tiên theo giá trị tuyệt đối, không phải "cao" theo cảm tính.
+
+### Troubleshoot etcd — 5 gotcha quan trọng
+
+**1. Sai IP → đừng đoán IP đúng**
+
+Nếu `kube-apiserver` đang trỏ etcd sai (`--etcd-servers=https://10.x.x.x:2379`), **không tự đoán IP**. Kiểm tra etcd thật sự đang listen ở đâu:
+
+```bash
+grep "listen-client-urls" /etc/kubernetes/manifests/etcd.yaml
+```
+
+`etcd.yaml` = source of truth.
+
+**2. Static Pod → không dùng `kubectl apply`**
+
+`etcd` và `kube-apiserver` trong kubeadm thường là **Static Pod**, manifest nằm ở `/etc/kubernetes/manifests/` (`etcd.yaml`, `kube-apiserver.yaml`). Sửa trực tiếp:
+
+```bash
+sudo vi /etc/kubernetes/manifests/etcd.yaml
+```
+
+```
+edit manifest → kubelet detects → restart static pod
+```
+
+Nếu sửa rồi mà vài giây vẫn chưa restart: `sudo systemctl restart kubelet`.
+
+**3. Port etcd → nhớ 2379, không phải 2380**
+
+Bẫy rất hay gặp: `2379` → client, `2380` → peer.
+
+```bash
+# ✅ đúng
+--etcd-servers=https://127.0.0.1:2379
+
+# ❌ sai — đây là port peer
+--etcd-servers=https://127.0.0.1:2380
+```
+
+Kiểm tra: `grep "listen-client-urls" /etc/kubernetes/manifests/etcd.yaml`
+
+**4. Certificate → endpoint đổi thì phải kiểm tra TLS**
+
+Nếu etcd dùng `https://...` thì phải để ý certificate/CA. Sai CA/certificate có thể gặp lỗi `x509: certificate signed by unknown authority`. Kiểm tra:
+
+```bash
+grep "client-cert-auth" /etc/kubernetes/manifests/etcd.yaml
+```
+
+👉 Đừng chỉ sửa IP/hostname mà quên phần TLS.
+
+**5. Hostname ≠ IP → đừng tự đổi hostname thành IP**
+
+Nếu source đang có `--etcd-servers=https://etcd-0:2379` và DNS lỗi, **đừng tự đổi thành IP** (`https://10.0.0.10:2379`). `etcd-0` có thể cố tình là hostname, đặc biệt trong HA setup:
+
+```
+etcd-0 → DNS resolution ❌ → API server broken
+```
+
+👉 Sửa nguyên nhân DNS, không tự thay hostname bằng IP.
+
+!!! tip "🔥 Cheat sheet để thi CKA"
+    Khi `kube-apiserver` báo lỗi etcd:
+
+    ```
+    1. Xem kube-apiserver.yaml
+            ↓
+    2. Xem etcd.yaml ← SOURCE OF TRUTH
+            ↓
+    3. Verify endpoint
+            ↓
+    4. Verify port
+            ↓
+    5. Verify TLS/certificate
+            ↓
+    6. Nếu Static Pod → sửa manifest
+            ↓
+    7. Kubelet tự restart
+    ```
+
+    3 thứ đặc biệt phải thuộc:
+
+    - etcd client → `2379` · etcd peer → `2380`
+    - Static Pod → `/etc/kubernetes/manifests/`
+    - Source of truth → `etcd.yaml`
+
+    Nếu gặp câu CKA kiểu "API server cannot connect to etcd", đừng vội sửa. Mở `etcd.yaml` trước, lấy endpoint thật rồi đối chiếu với `kube-apiserver.yaml`.
+
+### Add TLS 1.2 support while keeping TLS 1.3
+
+!!! tip "🔥 Cheat sheet CKA"
+    Gặp bài "Add TLS 1.2 support while keeping TLS 1.3", làm theo thứ tự:
+
+    ```
+    1. Inspect Deployment
+           ↓
+    2. Find TLS configuration
+           ↓
+    3. Edit ConfigMap/config
+           ↓
+    4. ADD 1.2, DON'T REMOVE 1.3
+           ↓
+    5. rollout restart
+           ↓
+    6. Wait for new Pod Ready
+           ↓
+    7. openssl -tls1_2
+           ↓
+    8. openssl -tls1_3
+    ```
+
+**4 câu cần nhớ:**
+
+- ConfigMap sửa ≠ Pod tự áp dụng ngay — phải `rollout restart`.
+- `minVersion=1.2` → cho phép 1.2 **và** các version cao hơn.
+- **ADD ≠ REPLACE** — thêm 1.2, không xoá 1.3.
+- Sau khi sửa TLS → restart + test cả 1.2 và 1.3.
+
+**openssl:**
+
+```bash
+openssl ... -tls1_2   # ép test TLS 1.2
+openssl ... -tls1_3   # ép test TLS 1.3
+```
+
+### ArgoCD
+
+**Argo CD = GitOps controller.**
+
+```
+Git
+ ↓
+Argo CD
+ ↓
+Kubernetes
+```
+
+**Application = Argo CD CRD.**
+
+```yaml
+Application:
+  source:
+    repoURL: # Git repository
+    path:    # directory chứa manifests
+
+  destination:
+    server:    # cluster
+    namespace: # nơi deploy workload
+```
+
+- `Synced` = Git == Cluster
+- `OutOfSync` = Git != Cluster
+- `Healthy` = workload healthy
+
+!!! warning
+    CRD phải tồn tại trước khi tạo `Application`.
+
+**Một flow thực chiến cần nhớ:**
+
+```bash
+# 1. Namespace
+k create ns argocd
+
+# 2. Install Argo CD
+k apply -f <argocd-manifest>
+
+# 3. Check CRD
+k get crd | grep argoproj
+
+# 4. Check Argo CD
+k get pod -n argocd
+
+# 5. Create Application
+k apply -f application.yaml
+
+# 6. Check
+k get application -A
+
+# 7. Sync status
+k get application -n argocd <app-name> \
+  -o jsonpath='{.status.sync.status}'
+
+# 8. Check workload
+k get deployment,service -n <app-namespace>
+```
