@@ -350,6 +350,14 @@ cat /var/lib/kubelet/config.yaml | grep staticPodPath
 # Delete: remove the file (kubectl delete won't work)
 ```
 
+- Architech linux (uname -m)
+
+| Kiến trúc Linux | Tên thường gặp trong package |
+|---|---|
+| `x86_64` | `amd64` |
+| `aarch64` | `arm64` |
+| `i386`, `i686` | `i386` |
+
 ### ConfigMap / Secret
 
 - Dùng `envFrom` để load tất cả key từ ConfigMap hoặc Secret thành biến môi trường.
@@ -441,6 +449,7 @@ node01         Ready    <none>          v1.34.2
 
 ```bash
 apt update
+apt list -a kubeadm
 apt install kubeadm='1.35.x-*'
 kubeadm version
 ```
@@ -450,7 +459,7 @@ Lúc này kubeadm đã là version mới nhưng cluster chưa upgrade.
 **Bước 3 — xem upgrade có khả dụng không**
 
 ```bash
-kubeadm upgrade plan
+kubeadm upgrade plan v1.35.x
 ```
 
 Nó cho bạn biết cluster hiện tại là gì và có thể upgrade lên version nào. Ví dụ:
