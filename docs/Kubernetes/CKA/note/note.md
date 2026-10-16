@@ -1,5 +1,6 @@
 ## Need practice
 1. etcd Backup & Restore
+
 2. kubeadm Upgrade
 
 
@@ -178,7 +179,7 @@ Effects: `NoSchedule` (block new pods) · `PreferNoSchedule` (soft avoid) · `No
     Paths are configurable and exam clusters might differ from defaults. A typo in the path means the pod never appears — and the kubelet won't error loudly about it, so it's easy to miss.
 
 ### Domain 4 — Cluster Architecture, Installation & Configuration
-1. RBAC has four objects:
+#### 4.1. Manage Role-Based Access Control (RBAC):
 
 | Object | Scope | Binds to |
 |---|---|---|
@@ -186,8 +187,63 @@ Effects: `NoSchedule` (block new pods) · `PreferNoSchedule` (soft avoid) · `No
 | ClusterRole | Cluster-wide | ClusterRoleBinding or RoleBinding |
 | RoleBinding | Namespace | Role or ClusterRole |
 | ClusterRoleBinding | Cluster-wide | ClusterRole |
-2. Test permissions RBAC: k auth can-i list pods -n dev --as=system:serviceaccount:dev:my-sa
-3. Use kubeadm to install a basic cluster:
+
+```bash
+# Create Role (namespace-scoped permissions)
+k create role pod-reader \
+  --verb=get,list,watch \
+  --resource=pods \
+  -n dev
+
+# Create RoleBinding
+k create rolebinding read-pods \
+  --role=pod-reader \
+  --serviceaccount=dev:my-sa \
+  -n dev
+
+# Create ClusterRole (cluster-wide permissions)
+k create clusterrole node-reader \
+  --verb=get,list \
+  --resource=nodes
+
+# Create ClusterRoleBinding
+k create clusterrolebinding read-nodes \
+  --clusterrole=node-reader \
+  --serviceaccount=dev:my-sa
+
+# Test permissions
+k auth can-i list pods -n dev --as=system:serviceaccount:dev:my-sa
+k auth can-i list nodes --as=system:serviceaccount:dev:my-sa
+```
+
+Tricky bit: a ClusterRole bound with a RoleBinding only grants access in that namespace. A ClusterRole bound with a ClusterRoleBinding grants access cluster-wide. Same ClusterRole, different scope depending on the binding type.
+
+#### 4.2 — Use Kubeadm to Install a Basic Cluster
+
+The kubeadm workflow:
+
+```bash
+# On control plane node:
+sudo kubeadm init --pod-network-cidr=10.244.0.0/16
+
+# Set up kubeconfig
+mkdir -p $HOME/.kube
+sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Install CNI (e.g., Calico)
+k apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+# On worker nodes:
+sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
+```
+
+If you lost the join command:
+```bash
+kubeadm token create --print-join-command
+```
+
+#### 4.3. Use kubeadm to install a basic cluster:
 
 ```bash
 # On control plane node:
@@ -206,7 +262,8 @@ sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-c
 ```
 
 Lost the join command? Regenerate it: `kubeadm token create --print-join-command`
-4. Node prerequisites — check in this order when a node won't join, `kubeadm init/join` fails, or kubelet won't start:
+
+#### 4.4 Node prerequisites — check in this order when a node won't join, `kubeadm init/join` fails, or kubelet won't start:
 
 | Vấn đề | Kiểm tra | Cách sửa |
 |---|---|---|
@@ -218,21 +275,103 @@ Lost the join command? Regenerate it: `kubeadm token create --print-join-command
 
 These are the most common OS-level misconfigurations the exam (or real environments) use to break node bootstrapping.
 
-```mermaid
-graph TD
-    RAM[RAM] --> Swap[Swap]
-    Swap --> SwapReq["Kubernetes yêu cầu OFF"]
 
-    FS[Filesystem] --> Overlay[overlay]
-    Overlay --> OverlayUse["Containerd dùng để mount filesystem"]
+#### 4.5 — Perform a Version Upgrade on a Kubernetes Cluster Using Kubeadm
 
-    Net[Networking] --> Bridge[Linux Bridge]
-    Net --> BrNetfilter[br_netfilter]
-    BrNetfilter --> IptablesUse["Cho phép iptables xử lý traffic của Pod/Service"]
+This is a classic CKA question. The sequence matters:
+
+**Control plane node:**
+```bash
+# 1. Update kubeadm
+sudo apt-mark unhold kubeadm
+sudo apt-get update && sudo apt-get install -y kubeadm=1.35.0-1.1
+sudo apt-mark hold kubeadm
+
+# 2. Plan
+sudo kubeadm upgrade plan
+
+# 3. Apply
+sudo kubeadm upgrade apply v1.35.0
+
+# 4. Update kubelet + kubectl
+sudo apt-mark unhold kubelet kubectl
+sudo apt-get install -y kubelet=1.35.0-1.1 kubectl=1.35.0-1.1
+sudo apt-mark hold kubelet kubectl
+
+# 5. Restart kubelet
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
 ```
-5. Upgrade on a Kubernetes Cluster Using Kubeadm 4.5
-6. ETCD Backup Key difference: control plane uses kubeadm upgrade apply, worker uses kubeadm upgrade node
-7. Where to find the cert paths: cat /etc/kubernetes/manifests/etcd.yaml and look for --cert-file, --key-file, --trusted-ca-file.
+
+**Worker node:**
+```bash
+# 1. From control plane: drain the worker
+k drain worker-1 --ignore-daemonsets --delete-emptydir-data
+
+# 2. SSH to worker, update packages
+sudo apt-mark unhold kubeadm kubelet kubectl
+sudo apt-get update
+sudo apt-get install -y kubeadm=1.35.0-1.1 kubelet=1.35.0-1.1 kubectl=1.35.0-1.1
+sudo apt-mark hold kubeadm kubelet kubectl
+
+# 3. Upgrade node
+sudo kubeadm upgrade node
+
+# 4. Restart kubelet
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
+
+# 5. From control plane: uncordon
+k uncordon worker-1
+```
+
+Key difference: control plane uses `kubeadm upgrade apply`, worker uses `kubeadm upgrade node`.
+
+#### 4.6 — Implement etcd Backup and Restore
+
+This shows up on almost every CKA exam. Memorize this.
+
+**Backup:**
+```bash
+ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup.db \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+```
+
+Where to find the cert paths: `cat /etc/kubernetes/manifests/etcd.yaml` and look for `--cert-file`, `--key-file`, `--trusted-ca-file`.
+
+`listen-client-urls → trusted-ca-file → cert-file → key-file`
+
+Tương ứng:
+
+`endpoint → cacert → cert → key`
+
+**Verify:**
+```bash
+ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-backup.db --write-table
+```
+
+**Restore:**
+```bash
+# 1. Restore to a new directory
+ETCDCTL_API=3 etcdctl snapshot restore /tmp/etcd-backup.db \
+  --data-dir=/var/lib/etcd-restored
+
+# 2. Update etcd manifest to use the restored directory
+sudo vi /etc/kubernetes/manifests/etcd.yaml
+# Change --data-dir=/var/lib/etcd → --data-dir=/var/lib/etcd-restored
+# Change hostPath path: /var/lib/etcd → /var/lib/etcd-restored
+
+# 3. Wait for etcd to restart (it's a static pod)
+# kubectl may be unresponsive for 30-60 seconds — that's normal
+```
+
+The three flags you need every time: `--cacert`, `--cert`, `--key`. I wrote them on the notepad in the exam environment before starting.
+
+---
+
 
 ### Domain 5 - Services & Networking
 1. Networking in Kubernetes "just works" if your CNI is installed correctly. Don't overthink the model — pods get IPs, pods can talk to each other, nodes can talk to pods. The CNI plugin (Calico, Flannel, Cilium) makes it happen
