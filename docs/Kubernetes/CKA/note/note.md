@@ -587,13 +587,18 @@ node01         Ready    <none>          v1.34.2
 **Bước 2 — upgrade kubeadm** (trên control plane)
 
 ```bash
+apt-mark unhold kubeadm
 apt update
 apt list -a kubeadm
 apt install kubeadm='1.35.x-*'
+apt-mark hold kubeadm
 kubeadm version
 ```
 
 Lúc này kubeadm đã là version mới nhưng cluster chưa upgrade.
+
+!!! warning "Package đang bị hold"
+    Trên cluster kubeadm, `kubeadm`, `kubelet`, `kubectl` thường bị `apt-mark hold` để tránh tự nâng ngoài ý muốn. Quên `unhold` thì `apt install` sẽ báo lỗi kiểu *held packages were changed*. Nhớ: **unhold → install → hold lại**.
 
 **Bước 3 — xem upgrade có khả dụng không**
 
@@ -622,7 +627,9 @@ Control plane → `apply`. Sau bước này, các Kubernetes control-plane compo
 **Bước 5 — upgrade kubelet + kubectl**
 
 ```bash
+apt-mark unhold kubelet kubectl
 apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+apt-mark hold kubelet kubectl
 
 systemctl daemon-reload
 systemctl restart kubelet
@@ -647,9 +654,9 @@ drain
   ↓
 upgrade kubeadm
   ↓
-upgrade kubelet + kubectl
-  ↓
 kubeadm upgrade node
+  ↓
+upgrade kubelet + kubectl
   ↓
 daemon-reload
   ↓
@@ -657,6 +664,11 @@ restart kubelet
   ↓
 uncordon
 ```
+
+!!! warning "Thứ tự dễ sai"
+    `kubeadm upgrade node` phải chạy **sau khi nâng kubeadm** và **trước khi nâng kubelet**. Lệnh này không nâng package nào cả, nó chỉ cập nhật cấu hình kubelet của node theo version mới. Nâng kubelet trước rồi mới chạy `upgrade node` là sai thứ tự.
+
+    Docs chính thức ([Upgrading Linux nodes](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/upgrading-linux-nodes/)) đặt `drain` **sau** `kubeadm upgrade node` (ngay trước khi nâng kubelet). Drain sớm hơn như ở đây cũng đúng và an toàn hơn. Điều bắt buộc là phải drain **trước khi** restart kubelet.
 
 **Bước 1 — Drain worker** (từ control plane)
 
@@ -666,15 +678,18 @@ kubectl drain node01 --ignore-daemonsets
 
 Mục đích là di chuyển workload ra khỏi worker trước khi ta restart/upgrade nó. Đây là lý do drain phải xảy ra trước upgrade.
 
-**Bước 2 — SSH vào worker**
+**Bước 2 — SSH vào worker, nâng kubeadm**
 
 ```bash
 ssh node01
 
+apt-mark unhold kubeadm
 apt update
 apt install kubeadm='1.35.x-*'
-apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+apt-mark hold kubeadm
 ```
+
+Worker cũng bị hold package như control plane. Kiểm tra nhanh bằng `apt-mark showhold`.
 
 **Bước 3 — kubeadm upgrade node**
 
@@ -686,9 +701,17 @@ apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
 
 Worker **KHÔNG** dùng `apply`.
 
-**Bước 4 — restart kubelet**
+```bash
+kubeadm upgrade node
+```
+
+**Bước 4 — nâng kubelet + kubectl, restart kubelet**
 
 ```bash
+apt-mark unhold kubelet kubectl
+apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+apt-mark hold kubelet kubectl
+
 systemctl daemon-reload
 systemctl restart kubelet
 ```
@@ -708,13 +731,17 @@ Giả sử cluster có `controlplane`, `node01`, `node02`, upgrade từ `1.34 �
 Control plane:
 
 ```bash
+apt-mark unhold kubeadm
 apt update
 apt install kubeadm='1.35.x-*'
+apt-mark hold kubeadm
 
 kubeadm upgrade plan
 kubeadm upgrade apply v1.35.x
 
+apt-mark unhold kubelet kubectl
 apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+apt-mark hold kubelet kubectl
 
 systemctl daemon-reload
 systemctl restart kubelet
@@ -727,11 +754,16 @@ Worker 1 (từ control plane rồi SSH vào worker):
 kubectl drain node01 --ignore-daemonsets
 
 # SSH vào worker
+apt-mark unhold kubeadm
 apt update
 apt install kubeadm='1.35.x-*'
-apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+apt-mark hold kubeadm
 
 kubeadm upgrade node
+
+apt-mark unhold kubelet kubectl
+apt install kubelet='1.35.x-*' kubectl='1.35.x-*'
+apt-mark hold kubelet kubectl
 
 systemctl daemon-reload
 systemctl restart kubelet
@@ -753,10 +785,10 @@ Nếu vào CKA gặp "Upgrade Kubernetes cluster from X to Y", nghĩ ngay:
 CONTROL PLANE
 ────────────────────────────
 1. apt update
-2. upgrade kubeadm
+2. unhold → upgrade kubeadm → hold
 3. kubeadm upgrade plan
 4. kubeadm upgrade apply v1.35.x
-5. upgrade kubelet + kubectl
+5. unhold → upgrade kubelet + kubectl → hold
 6. daemon-reload
 7. restart kubelet
 
@@ -764,9 +796,9 @@ CONTROL PLANE
 WORKER
 ────────────────────────────
 1. kubectl drain NODE
-2. upgrade kubeadm
-3. upgrade kubelet + kubectl
-4. kubeadm upgrade node
+2. unhold → upgrade kubeadm → hold
+3. kubeadm upgrade node
+4. unhold → upgrade kubelet + kubectl → hold
 5. daemon-reload
 6. restart kubelet
 7. kubectl uncordon NODE
@@ -780,7 +812,8 @@ kubectl get nodes
 **Câu thần chú để nhớ:**
 
 - Control plane: plan → apply
-- Worker: drain → node → uncordon
+- Worker: drain → kubeadm → upgrade node → kubelet → uncordon
+- kubeadm luôn đi trước `kubeadm upgrade ...`, kubelet luôn được nâng **sau** bước đó
 - Package đổi → daemon-reload → restart
 - Control plane trước → worker từng node một.
 
