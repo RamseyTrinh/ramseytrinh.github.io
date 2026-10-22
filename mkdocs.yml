@@ -51,6 +51,8 @@ nav:
           - Kubernetes/CKA/cheatsheet/cka-cheatsheet.md
       - CKA Notes:
           - Kubernetes/CKA/note/note.md
+          - Kubernetes/CKA/note/read-before-take-the-exam.md
+          - Kubernetes/CKA/note/imperative-commands-quick-reference.md
       - CKA Troubleshooting:
           - Kubernetes/CKA/troubleshooting/README.md
       - CKA Exam Setup:
