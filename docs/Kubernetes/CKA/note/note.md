@@ -1096,6 +1096,14 @@ PriorityClass
 
     Nên chọn `value` gần mức tối đa cho user-defined (ví dụ `999999`) để đảm bảo Pod được schedule trước, ngay cả khi cluster đang thiếu resource — vì scheduler chọn ưu tiên theo giá trị tuyệt đối, không phải "cao" theo cảm tính.
 
+**QoS class của Pod** (quyết định thứ tự bị evict khi node thiếu resource):
+
+| QoS class | Điều kiện |
+| --- | --- |
+| `BestEffort` | Không có `requests`/`limits` |
+| `Burstable` | `requests` không bằng `limits` |
+| `Guaranteed` | `requests` bằng `limits` cho mọi container |
+
 ### Troubleshoot etcd — 5 gotcha quan trọng
 
 **1. Sai IP → đừng đoán IP đúng**
@@ -1280,3 +1288,41 @@ k get application -n argocd <app-name> \
 # 8. Check workload
 k get deployment,service -n <app-namespace>
 ```
+
+### Lệnh hay dùng
+
+**Decode base64 ra file** (ví dụ cert trong đề)
+
+```bash
+echo 'LS0tLS1CRUdJTi...' | base64 -d > /course/1/cert
+```
+
+**Tạo lại lệnh join cho worker node**
+
+```bash
+kubeadm token create --print-join-command
+```
+
+**Kiểm tra ngày hết hạn của cert etcd**
+
+```bash
+sudo openssl x509 \
+  -in /etc/kubernetes/pki/etcd/server.crt \
+  -noout -enddate
+```
+
+**iptables**
+
+| Lệnh | Tác dụng |
+| --- | --- |
+| `iptables -L` | Liệt kê rules của filter table |
+| `iptables -L -n` | Hiển thị IP, port dạng số, không phân giải DNS |
+| `iptables -L -n -v` | Hiển thị chi tiết, packet và byte counters |
+| `iptables -L -n -v --line-numbers` | Hiển thị thêm số thứ tự rules |
+| `iptables -t nat -L -n -v` | Xem NAT table |
+| `iptables-save` | Xuất toàn bộ iptables rules |
+| `iptables-save -t nat` | Xuất riêng NAT table |
+
+!!! note "Phân biệt"
+    - `iptables -L`: hiển thị dạng bảng, dễ đọc.
+    - `iptables-save`: hiển thị dạng cấu hình, dễ `grep` và lưu file.
