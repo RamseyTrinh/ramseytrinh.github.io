@@ -3,6 +3,68 @@
 
 2. kubeadm Upgrade
 
+## Ramsey 's note
+
+### Storage
+
+!!! warning "hostPath phải tồn tại trên node"
+    Tạo PV với `hostPath: /data/exercise-12` nhưng quên `mkdir -p /data/exercise-12` trên node → Pod Pending.
+
+### Port: Pod vs Service
+
+| Object | Field |
+| --- | --- |
+| Pod / Container | chỉ có `containerPort` |
+| Service | có `port` và `targetPort` |
+
+### Scheduling vào node chỉ định
+
+3 cách chính: `nodeSelector` (dễ nhất) · node affinity · taints (node) + tolerations (pod).
+
+### Static pods
+
+Đặt manifest vào chỗ default mà pod không lên → kiểm tra đường dẫn thực tế:
+
+```bash
+cat /var/lib/kubelet/config.yaml | grep staticPodPath
+```
+
+### Check cert còn hạn
+
+=== "kubeadm"
+
+    ```bash
+    sudo kubeadm certs check-expiration
+    ```
+
+=== "openssl"
+
+    ```bash
+    sudo openssl x509 -in /etc/kubernetes/pki/etcd/server.crt -noout -enddate
+    ```
+
+### Check etcd health
+
+```bash
+ETCDCTL_API=3 etcdctl endpoint health \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+```
+
+### Test permissions RBAC
+
+```bash
+k auth can-i list pods -n dev --as=system:serviceaccount:dev:my-sa
+k auth can-i list nodes --as=system:serviceaccount:dev:my-sa
+```
+
+### Lấy lệnh join node
+
+```bash
+kubeadm token create --print-join-command
+```
 
 ## Syllabus
 ### Domain 1: 
@@ -85,89 +147,113 @@ The most common networking issues on the exam:
 - kube-proxy not running on a node
 
 ### Domain 3: Workloads, Scheduling
-1. Deployments manage ReplicaSets, which manage Pods
-1. Pod/Container just has containerPort. Service has port and targetPort
-2. ConfigMaps hold non-sensitive config. Secrets hold sensitive data (base64-encoded, not encrypted by default)
-3. Three ways to inject ConfigMap/Secret into a pod:
 
-- Env vars (all keys at once):
+#### 3.1 Deployment, Pod và Service
 
-```yaml
-envFrom:
-- configMapRef:
-    name: app-config
-- secretRef:
-    name: db-creds
-```
+- Deployments manage ReplicaSets, which manage Pods.
+- Pod/Container chỉ có `containerPort`. Service có `port` và `targetPort`.
 
-- Single key as one env var:
+#### 3.2 ConfigMap & Secret
 
-```yaml
-env:
-- name: DATABASE_USER
-  valueFrom:
-    secretKeyRef:
-      name: db-creds
-      key: DB_USER
-```
+ConfigMaps hold non-sensitive config. Secrets hold sensitive data (base64-encoded, not encrypted by default).
 
-- Mounted as files (each key becomes a file in the mount path):
+3 cách inject vào Pod:
 
-```yaml
-volumeMounts:
-- name: config-vol
-  mountPath: /etc/config
-volumes:
-- name: config-vol
-  configMap:
-    name: app-config
-```
-4. If you set resource limits without requests, requests default to limits.
-5. Schedule pods on specific nodes — three mechanisms:
+=== "envFrom (tất cả key)"
 
-- `nodeSelector` — simplest, exact label match:
+    ```yaml
+    envFrom:
+    - configMapRef:
+        name: app-config
+    - secretRef:
+        name: db-creds
+    ```
 
-```yaml
-spec:
-  nodeSelector:
-    disk: ssd
-```
+=== "env (một key)"
 
-- Node affinity — more flexible, supports expressions (`In`, `NotIn`, etc.):
+    ```yaml
+    env:
+    - name: DATABASE_USER
+      valueFrom:
+        secretKeyRef:
+          name: db-creds
+          key: DB_USER
+    ```
 
-```yaml
-spec:
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-        - matchExpressions:
-          - key: disk
-            operator: In
-            values:
-            - ssd
-```
+=== "Mount thành file"
 
-- Taints (on nodes) + tolerations (on pods) — repels pods instead of attracting them:
+    Mỗi key trở thành một file trong mount path:
 
-```bash
-k taint nodes node1 gpu=true:NoSchedule    # taint
-k taint nodes node1 gpu=true:NoSchedule-   # remove
-```
+    ```yaml
+    volumeMounts:
+    - name: config-vol
+      mountPath: /etc/config
+    volumes:
+    - name: config-vol
+      configMap:
+        name: app-config
+    ```
 
-```yaml
-spec:
-  tolerations:
-  - key: "gpu"
-    operator: "Equal"
-    value: "true"
-    effect: "NoSchedule"
-```
+#### 3.3 Resources
 
-Effects: `NoSchedule` (block new pods) · `PreferNoSchedule` (soft avoid) · `NoExecute` (also evicts existing pods).
-6. Static pods: managed directly by the kubelet on a node (not by the API server/scheduler). The kubelet watches a directory and auto-creates/restarts a pod for every manifest file dropped there.
+If you set resource limits without requests, requests default to limits.
 
-- Default manifest directory is usually `/etc/kubernetes/manifests/`, but it's **not guaranteed** — it's whatever the kubelet is configured with.
+#### 3.4 Schedule Pod lên node chỉ định
+
+3 cơ chế:
+
+=== "nodeSelector"
+
+    Đơn giản nhất, match label chính xác:
+
+    ```yaml
+    spec:
+      nodeSelector:
+        disk: ssd
+    ```
+
+=== "Node affinity"
+
+    Linh hoạt hơn, hỗ trợ expression (`In`, `NotIn`, ...):
+
+    ```yaml
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: disk
+                operator: In
+                values:
+                - ssd
+    ```
+
+=== "Taints + Tolerations"
+
+    Đẩy Pod ra xa (repel) thay vì hút vào:
+
+    ```bash
+    k taint nodes node1 gpu=true:NoSchedule    # taint
+    k taint nodes node1 gpu=true:NoSchedule-   # remove
+    ```
+
+    ```yaml
+    spec:
+      tolerations:
+      - key: "gpu"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+    ```
+
+    Effects: `NoSchedule` (block new pods) · `PreferNoSchedule` (soft avoid) · `NoExecute` (also evicts existing pods).
+
+#### 3.5 Static pods
+
+Managed trực tiếp bởi kubelet trên node (không qua API server/scheduler). Kubelet watch một thư mục và tự tạo/restart Pod cho mỗi manifest file nằm trong đó.
+
+- Thư mục mặc định thường là `/etc/kubernetes/manifests/`, nhưng **không đảm bảo** — nó là giá trị kubelet được cấu hình.
 
 !!! warning "Verify the actual staticPodPath"
     Forgot to check the actual path on the node. Placed the manifest in the "usual" spot, but the kubelet was configured to look elsewhere. Always verify:
@@ -179,7 +265,8 @@ Effects: `NoSchedule` (block new pods) · `PreferNoSchedule` (soft avoid) · `No
     Paths are configurable and exam clusters might differ from defaults. A typo in the path means the pod never appears — and the kubelet won't error loudly about it, so it's easy to miss.
 
 ### Domain 4 — Cluster Architecture, Installation & Configuration
-#### 4.1. Manage Role-Based Access Control (RBAC):
+
+#### 4.1 Manage Role-Based Access Control (RBAC)
 
 | Object | Scope | Binds to |
 |---|---|---|
@@ -216,11 +303,10 @@ k auth can-i list pods -n dev --as=system:serviceaccount:dev:my-sa
 k auth can-i list nodes --as=system:serviceaccount:dev:my-sa
 ```
 
-Tricky bit: a ClusterRole bound with a RoleBinding only grants access in that namespace. A ClusterRole bound with a ClusterRoleBinding grants access cluster-wide. Same ClusterRole, different scope depending on the binding type.
+!!! warning "Tricky bit"
+    A ClusterRole bound with a **RoleBinding** only grants access in that namespace. A ClusterRole bound with a **ClusterRoleBinding** grants access cluster-wide. Same ClusterRole, different scope depending on the binding type.
 
-#### 4.2 — Use Kubeadm to Install a Basic Cluster
-
-The kubeadm workflow:
+#### 4.2 Use kubeadm to Install a Basic Cluster
 
 ```bash
 # On control plane node:
@@ -238,32 +324,15 @@ k apply -f https://docs.projectcalico.org/manifests/calico.yaml
 sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
 ```
 
-If you lost the join command:
+Lost the join command? Regenerate it:
+
 ```bash
 kubeadm token create --print-join-command
 ```
 
-#### 4.3. Use kubeadm to install a basic cluster:
+#### 4.3 Node prerequisites
 
-```bash
-# On control plane node:
-sudo kubeadm init --pod-network-cidr=10.244.0.0/16
-
-# Set up kubeconfig
-mkdir -p $HOME/.kube
-sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
-sudo chown $(id -u):$(id -g) $HOME/.kube/config
-
-# Install CNI (e.g., Calico)
-k apply -f https://docs.projectcalico.org/manifests/calico.yaml
-
-# On worker nodes:
-sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
-```
-
-Lost the join command? Regenerate it: `kubeadm token create --print-join-command`
-
-#### 4.4 Node prerequisites — check in this order when a node won't join, `kubeadm init/join` fails, or kubelet won't start:
+Check theo thứ tự này khi node không join được, `kubeadm init/join` fail, hoặc kubelet không start:
 
 | Vấn đề | Kiểm tra | Cách sửa |
 |---|---|---|
@@ -273,102 +342,108 @@ Lost the join command? Regenerate it: `kubeadm token create --print-join-command
 | Thiếu module br_netfilter | `lsmod \| grep br_netfilter` | `modprobe br_netfilter` |
 | Sai sysctl | `sysctl net.bridge.bridge-nf-call-iptables` | `sysctl -w net.bridge.bridge-nf-call-iptables=1` |
 
-These are the most common OS-level misconfigurations the exam (or real environments) use to break node bootstrapping.
+Đây là các lỗi OS-level phổ biến nhất mà đề thi (hoặc môi trường thật) hay dùng để làm hỏng bước bootstrap node.
 
+#### 4.4 Version Upgrade with kubeadm
 
-#### 4.5 — Perform a Version Upgrade on a Kubernetes Cluster Using Kubeadm
+Câu hỏi CKA kinh điển, thứ tự rất quan trọng (chi tiết hơn ở phần [Kubeadm Upgrade](#kubeadm-upgrade) bên dưới).
 
-This is a classic CKA question. The sequence matters:
+=== "Control plane"
 
-**Control plane node:**
-```bash
-# 1. Update kubeadm
-sudo apt-mark unhold kubeadm
-sudo apt-get update && sudo apt-get install -y kubeadm=1.35.0-1.1
-sudo apt-mark hold kubeadm
+    ```bash
+    # 1. Update kubeadm
+    sudo apt-mark unhold kubeadm
+    sudo apt-get update && sudo apt-get install -y kubeadm=1.35.0-1.1
+    sudo apt-mark hold kubeadm
 
-# 2. Plan
-sudo kubeadm upgrade plan
+    # 2. Plan
+    sudo kubeadm upgrade plan
 
-# 3. Apply
-sudo kubeadm upgrade apply v1.35.0
+    # 3. Apply
+    sudo kubeadm upgrade apply v1.35.0
 
-# 4. Update kubelet + kubectl
-sudo apt-mark unhold kubelet kubectl
-sudo apt-get install -y kubelet=1.35.0-1.1 kubectl=1.35.0-1.1
-sudo apt-mark hold kubelet kubectl
+    # 4. Update kubelet + kubectl
+    sudo apt-mark unhold kubelet kubectl
+    sudo apt-get install -y kubelet=1.35.0-1.1 kubectl=1.35.0-1.1
+    sudo apt-mark hold kubelet kubectl
 
-# 5. Restart kubelet
-sudo systemctl daemon-reload
-sudo systemctl restart kubelet
-```
+    # 5. Restart kubelet
+    sudo systemctl daemon-reload
+    sudo systemctl restart kubelet
+    ```
 
-**Worker node:**
-```bash
-# 1. From control plane: drain the worker
-k drain worker-1 --ignore-daemonsets --delete-emptydir-data
+=== "Worker"
 
-# 2. SSH to worker, update packages
-sudo apt-mark unhold kubeadm kubelet kubectl
-sudo apt-get update
-sudo apt-get install -y kubeadm=1.35.0-1.1 kubelet=1.35.0-1.1 kubectl=1.35.0-1.1
-sudo apt-mark hold kubeadm kubelet kubectl
+    ```bash
+    # 1. From control plane: drain the worker
+    k drain worker-1 --ignore-daemonsets --delete-emptydir-data
 
-# 3. Upgrade node
-sudo kubeadm upgrade node
+    # 2. SSH to worker, update packages
+    sudo apt-mark unhold kubeadm kubelet kubectl
+    sudo apt-get update
+    sudo apt-get install -y kubeadm=1.35.0-1.1 kubelet=1.35.0-1.1 kubectl=1.35.0-1.1
+    sudo apt-mark hold kubeadm kubelet kubectl
 
-# 4. Restart kubelet
-sudo systemctl daemon-reload
-sudo systemctl restart kubelet
+    # 3. Upgrade node
+    sudo kubeadm upgrade node
 
-# 5. From control plane: uncordon
-k uncordon worker-1
-```
+    # 4. Restart kubelet
+    sudo systemctl daemon-reload
+    sudo systemctl restart kubelet
 
-Key difference: control plane uses `kubeadm upgrade apply`, worker uses `kubeadm upgrade node`.
+    # 5. From control plane: uncordon
+    k uncordon worker-1
+    ```
 
-#### 4.6 — Implement etcd Backup and Restore
+!!! tip "Key difference"
+    Control plane dùng `kubeadm upgrade apply`, worker dùng `kubeadm upgrade node`.
 
-This shows up on almost every CKA exam. Memorize this.
+#### 4.5 Implement etcd Backup and Restore
 
-**Backup:**
-```bash
-ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup.db \
-  --endpoints=https://127.0.0.1:2379 \
-  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-  --cert=/etc/kubernetes/pki/etcd/server.crt \
-  --key=/etc/kubernetes/pki/etcd/server.key
-```
+Xuất hiện ở gần như mọi kỳ thi CKA. Phải thuộc.
 
-Where to find the cert paths: `cat /etc/kubernetes/manifests/etcd.yaml` and look for `--cert-file`, `--key-file`, `--trusted-ca-file`.
+=== "Backup"
 
-`listen-client-urls → trusted-ca-file → cert-file → key-file`
+    ```bash
+    ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup.db \
+      --endpoints=https://127.0.0.1:2379 \
+      --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+      --cert=/etc/kubernetes/pki/etcd/server.crt \
+      --key=/etc/kubernetes/pki/etcd/server.key
+    ```
 
-Tương ứng:
+=== "Verify"
 
-`endpoint → cacert → cert → key`
+    ```bash
+    ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-backup.db --write-table
+    ```
 
-**Verify:**
-```bash
-ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-backup.db --write-table
-```
+=== "Restore"
 
-**Restore:**
-```bash
-# 1. Restore to a new directory
-ETCDCTL_API=3 etcdctl snapshot restore /tmp/etcd-backup.db \
-  --data-dir=/var/lib/etcd-restored
+    ```bash
+    # 1. Restore to a new directory
+    ETCDCTL_API=3 etcdctl snapshot restore /tmp/etcd-backup.db \
+      --data-dir=/var/lib/etcd-restored
 
-# 2. Update etcd manifest to use the restored directory
-sudo vi /etc/kubernetes/manifests/etcd.yaml
-# Change --data-dir=/var/lib/etcd → --data-dir=/var/lib/etcd-restored
-# Change hostPath path: /var/lib/etcd → /var/lib/etcd-restored
+    # 2. Update etcd manifest to use the restored directory
+    sudo vi /etc/kubernetes/manifests/etcd.yaml
+    # Change --data-dir=/var/lib/etcd → --data-dir=/var/lib/etcd-restored
+    # Change hostPath path: /var/lib/etcd → /var/lib/etcd-restored
 
-# 3. Wait for etcd to restart (it's a static pod)
-# kubectl may be unresponsive for 30-60 seconds — that's normal
-```
+    # 3. Wait for etcd to restart (it's a static pod)
+    # kubectl may be unresponsive for 30-60 seconds — that's normal
+    ```
 
-The three flags you need every time: `--cacert`, `--cert`, `--key`. I wrote them on the notepad in the exam environment before starting.
+Tìm cert path ở đâu: `cat /etc/kubernetes/manifests/etcd.yaml`, tìm `--cert-file`, `--key-file`, `--trusted-ca-file`.
+
+| etcd.yaml | etcdctl flag |
+| --- | --- |
+| `listen-client-urls` | `--endpoints` |
+| `trusted-ca-file` | `--cacert` |
+| `cert-file` | `--cert` |
+| `key-file` | `--key` |
+
+Ba flag cần mỗi lần: `--cacert`, `--cert`, `--key`. Ghi sẵn vào notepad trong môi trường thi trước khi bắt đầu.
 
 ---
 
