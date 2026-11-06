@@ -5,45 +5,123 @@
 
 ## Ramsey 's note
 
-### Storage
+1. **Storage**
 
-!!! warning "hostPath phải tồn tại trên node"
     Tạo PV với `hostPath: /data/exercise-12` nhưng quên `mkdir -p /data/exercise-12` trên node → Pod Pending.
 
-### Port: Pod vs Service
+2. **Check cert còn hạn**
 
-| Object | Field |
+    - Bằng kubeadm: `sudo kubeadm certs check-expiration`
+    - Bằng openssl: `sudo openssl x509 -in /etc/kubernetes/pki/etcd/server.crt -noout -enddate`
+
+3. **Check etcd health**
+
+    ```bash
+    ETCDCTL_API=3 etcdctl endpoint health \
+      --endpoints=https://127.0.0.1:2379 \
+      --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+      --cert=/etc/kubernetes/pki/etcd/server.crt \
+      --key=/etc/kubernetes/pki/etcd/server.key
+    ```
+
+4. **Port: Pod vs Service**
+
+    | Object | Field |
+    | --- | --- |
+    | Pod / Container | chỉ có `containerPort` |
+    | Service | có `port` và `targetPort` |
+
+5. **Schedule Pod vào node chỉ định**
+
+    3 cách chính: `nodeSelector` (dễ nhất) · node affinity · taints (node) + tolerations (pod).
+
+6. **Static pods**
+
+    Đặt manifest vào chỗ default mà pod không lên → kiểm tra đường dẫn thực tế:
+
+    ```bash
+    cat /var/lib/kubelet/config.yaml | grep staticPodPath
+    ```
+
+7. **Test permissions RBAC**
+
+    ```bash
+    k auth can-i list pods -n dev --as=system:serviceaccount:dev:my-sa
+    k auth can-i list nodes --as=system:serviceaccount:dev:my-sa
+    ```
+
+8. **Lấy lệnh join node**
+
+    ```bash
+    kubeadm token create --print-join-command
+    ```
+
+## Syllabus
+### Domain 1: Storage
+
+#### 1.1 Scope của PV và PVC
+
+PV is cluster-scoped (no namespace). PVC is namespace-scoped.
+
+#### 1.2 PV, PVC, StorageClass
+
+A PV is the actual storage (think: the hard drive). A PVC is a request for that storage (think: "I need 2Gi of disk"). A StorageClass tells Kubernetes how to dynamically create PVs when a PVC asks for one.
+
+#### 1.3 Khi nào PVC bind vào PV
+
+PVC binds to a PV when: capacity >= request, accessModes match, AND storageClassName matches. If any one of these is off, the PVC sits in Pending forever with no helpful error message.
+
+#### 1.4 Access Modes
+
+Know these four-letter abbreviations:
+
+| Mode | Short | What it actually means |
+| --- | --- | --- |
+| ReadWriteOnce | RWO | One node can mount read-write. This is what you'll use 90% of the time. |
+| ReadOnlyMany | ROX | Many nodes can mount read-only. Rarely comes up on the exam. |
+| ReadWriteMany | RWX | Many nodes can mount read-write. Doesn't work with hostPath. |
+| ReadWriteOncePod | RWOP | Only one pod can mount read-write. New in v1.29+, might show up. |
+
+#### 1.5 Reclaim Policies
+
+Know the difference or you'll lose data:
+
+| Policy | What actually happens |
 | --- | --- |
-| Pod / Container | chỉ có `containerPort` |
-| Service | có `port` và `targetPort` |
+| Retain | The PV survives PVC deletion. Data is safe, but you must manually clean up the PV before it can be reused. |
+| Delete | The PV and underlying storage are deleted. This is the default for most cloud StorageClasses. Be careful. |
+| Recycle | Deprecated. Don't use it or memorize it. |
 
-### Scheduling vào node chỉ định
+On the exam: know the difference between **Retain** and **Delete**. If the question says data should persist after PVC deletion, use **Retain**.
 
-3 cách chính: `nodeSelector` (dễ nhất) · node affinity · taints (node) + tolerations (pod).
+#### 1.6 Volume Modes
 
-### Static pods
+- **Filesystem** (default) — mounted as a directory.
+- **Block** — a raw block device with no filesystem.
 
-Đặt manifest vào chỗ default mà pod không lên → kiểm tra đường dẫn thực tế:
+#### 1.7 Verify storage
+
+!!! warning "Pod Readiness Proves Storage Works"
+    "PVC is Bound" looks good on paper, but until you attach a Pod and it becomes Running, you haven't proven the storage actually works. A Pod staying Pending means either: (a) the PVC isn't Bound, (b) the hostPath doesn't exist on the node, (c) permissions are wrong, or (d) scheduling constraints prevent placement. Always verify the consumer Pod reaches Running state — that's your real test.
+
+!!! warning "hostPath Directory Must Exist on Node"
+    Created PV with `hostPath: /data/exercise-12` but forgot to `mkdir -p /data/exercise-12` on the node. Pod stayed Pending. The node has to have the backing directory, and if running on a multi-node cluster, the Pod might land on a node that doesn't have it. Consider this when designing storage tests.
+
+### Domain 2: Troubleshoots
+
+#### 2.1 Container crashed
 
 ```bash
-cat /var/lib/kubelet/config.yaml | grep staticPodPath
+k logs <pod-name> --previous    # crashed container — you'll use this a lot
 ```
 
-### Check cert còn hạn
+#### 2.2 Cert của cluster hết hạn
 
-=== "kubeadm"
+```bash
+sudo kubeadm certs check-expiration
+```
 
-    ```bash
-    sudo kubeadm certs check-expiration
-    ```
-
-=== "openssl"
-
-    ```bash
-    sudo openssl x509 -in /etc/kubernetes/pki/etcd/server.crt -noout -enddate
-    ```
-
-### Check etcd health
+#### 2.3 etcd healthy
 
 ```bash
 ETCDCTL_API=3 etcdctl endpoint health \
@@ -53,68 +131,16 @@ ETCDCTL_API=3 etcdctl endpoint health \
   --key=/etc/kubernetes/pki/etcd/server.key
 ```
 
-### Test permissions RBAC
+#### 2.4 Control plane manifests
 
 ```bash
-k auth can-i list pods -n dev --as=system:serviceaccount:dev:my-sa
-k auth can-i list nodes --as=system:serviceaccount:dev:my-sa
+ls /etc/kubernetes/manifests/
+# Should have: etcd.yaml, kube-apiserver.yaml, kube-controller-manager.yaml, kube-scheduler.yaml
 ```
 
-### Lấy lệnh join node
+#### 2.5 Troubleshoot Networking
 
-```bash
-kubeadm token create --print-join-command
-```
-
-## Syllabus
-### Domain 1: 
-1. PV is cluster-scoped (no namespace). PVC is namespace-scoped
-2. A PV is the actual storage (think: the hard drive). A PVC is a request for that storage (think: "I need 2Gi of disk"). A StorageClass tells Kubernetes how to dynamically create PVs when a PVC asks for one.
-3. PVC binds to a PV when: capacity >= request, accessModes match, AND storageClassName matches. If any one of these is off, the PVC sits in Pending forever with no helpful error message.
-
-**Access Modes** — know these four-letter abbreviations:
-
-| Mode | Short | What it actually means |
-| --- | --- | --- |
-| ReadWriteOnce | RWO | One node can mount read-write. This is what you'll use 90% of the time. |
-| ReadOnlyMany | ROX | Many nodes can mount read-only. Rarely comes up on the exam. |
-| ReadWriteMany | RWX | Many nodes can mount read-write. Doesn't work with hostPath. |
-| ReadWriteOncePod | RWOP | Only one pod can mount read-write. New in v1.29+, might show up. |
-
-**Reclaim Policies** — know the difference or you'll lose data:
-
-| Policy | What actually happens |
-| --- | --- |
-| Retain | The PV survives PVC deletion. Data is safe, but you must manually clean up the PV before it can be reused. |
-| Delete | The PV and underlying storage are deleted. This is the default for most cloud StorageClasses. Be careful. |
-| Recycle | Deprecated. Don't use it or memorize it. |
-
-**Volume Modes:**
-
-- **Filesystem** (default) — mounted as a directory.
-- **Block** — a raw block device with no filesystem.
-
-On the exam: know the difference between **Retain** and **Delete**. If the question says data should persist after PVC deletion, use **Retain**.
-
-!!! warning "Pod Readiness Proves Storage Works"
-    "PVC is Bound" looks good on paper, but until you attach a Pod and it becomes Running, you haven't proven the storage actually works. A Pod staying Pending means either: (a) the PVC isn't Bound, (b) the hostPath doesn't exist on the node, (c) permissions are wrong, or (d) scheduling constraints prevent placement. Always verify the consumer Pod reaches Running state — that's your real test.
-
-!!! warning "hostPath Directory Must Exist on Node"
-    Created PV with `hostPath: /data/exercise-12` but forgot to `mkdir -p /data/exercise-12` on the node. Pod stayed Pending. The node has to have the backing directory, and if running on a multi-node cluster, the Pod might land on a node that doesn't have it. Consider this when designing storage tests.
-
-### Domain 2: Troubleshoots
-1. Check container crashed: k logs <pod-name> --previous                 # crashed container — you'll use this a lot
-2. Check certificated cluster expired: sudo kubeadm certs check-expiration
-
-3. Check ETCD healthy: ETCDCTL_API=3 etcdctl endpoint health \
-  --endpoints=https://127.0.0.1:2379 \
-  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-  --cert=/etc/kubernetes/pki/etcd/server.crt \
-  --key=/etc/kubernetes/pki/etcd/server.key
-
-4. ls /etc/kubernetes/manifests/  # Should have: etcd.yaml, kube-apiserver.yaml, kube-controller-manager.yaml, kube-scheduler.yaml
-
-5. Troubleshoot Networking — Service not reachable? Work through this:
+Service not reachable? Work through this:
 
 ```bash
 # 1. Does the service exist and have the right selector?
@@ -449,15 +475,36 @@ Ba flag cần mỗi lần: `--cacert`, `--cert`, `--key`. Ghi sẵn vào notepad
 
 
 ### Domain 5 - Services & Networking
-1. Networking in Kubernetes "just works" if your CNI is installed correctly. Don't overthink the model — pods get IPs, pods can talk to each other, nodes can talk to pods. The CNI plugin (Calico, Flannel, Cilium) makes it happen
-2. Same-node pods talk through a bridge, cross-node pods go through the CNI overlay
+
+#### 5.1 CNI
+
+Networking in Kubernetes "just works" if your CNI is installed correctly. Don't overthink the model — pods get IPs, pods can talk to each other, nodes can talk to pods. The CNI plugin (Calico, Flannel, Cilium) makes it happen.
+
+#### 5.2 Pod-to-pod
+
+Same-node pods talk through a bridge, cross-node pods go through the CNI overlay.
+
 ```bash
 # Test pod-to-pod connectivity
 k exec pod-a -- wget -qO- --timeout=2 http://<pod-b-ip>
 ```
-3. The most important thing: port is what clients use to reach the service. targetPort is the port the container listens on. nodePort is the port on the node (NodePort/LoadBalancer only)
-4. CoreDNS is the cluster DNS server (replaced kube-dns a long time ago). It runs as a Deployment in kube-system
-5. Critical gotcha on the exam: if you add an Egress policy, you must also allow DNS (UDP 53). Otherwise the pod can't resolve any service names and everything looks broken even though the policy is "correct."
+
+#### 5.3 port, targetPort, nodePort
+
+The most important thing:
+
+- `port`: what clients use to reach the service.
+- `targetPort`: the port the container listens on.
+- `nodePort`: the port on the node (NodePort/LoadBalancer only).
+
+#### 5.4 CoreDNS
+
+CoreDNS is the cluster DNS server (replaced kube-dns a long time ago). It runs as a Deployment in kube-system.
+
+#### 5.5 NetworkPolicy Egress và DNS
+
+!!! warning "Critical gotcha"
+    If you add an Egress policy, you must also allow DNS (UDP 53). Otherwise the pod can't resolve any service names and everything looks broken even though the policy is "correct."
 
 ## Time Allocation
 
