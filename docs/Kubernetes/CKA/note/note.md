@@ -3,11 +3,15 @@
 
 2. kubeadm Upgrade
 
+3. Schedule Pod to Node
+
 ## Ramsey 's note
 
-1. **Storage**
+1. **Lệnh decode dễ nhất** (ví dụ cert trong đề)
 
-    Tạo PV với `hostPath: /data/exercise-12` nhưng quên `mkdir -p /data/exercise-12` trên node → Pod Pending.
+    ```bash
+    echo 'LS0tLS1CRUdJTi...' | base64 -d > /course/1/cert
+    ```
 
 2. **Check cert còn hạn**
 
@@ -24,18 +28,11 @@
       --key=/etc/kubernetes/pki/etcd/server.key
     ```
 
-4. **Port: Pod vs Service**
-
-    | Object | Field |
-    | --- | --- |
-    | Pod / Container | chỉ có `containerPort` |
-    | Service | có `port` và `targetPort` |
-
-5. **Schedule Pod vào node chỉ định**
+4. **Schedule Pod vào node chỉ định**
 
     3 cách chính: `nodeSelector` (dễ nhất) · node affinity · taints (node) + tolerations (pod).
 
-6. **Static pods**
+5. **Static pods**
 
     Đặt manifest vào chỗ default mà pod không lên → kiểm tra đường dẫn thực tế:
 
@@ -43,18 +40,144 @@
     cat /var/lib/kubelet/config.yaml | grep staticPodPath
     ```
 
-7. **Test permissions RBAC**
+6. **Test permissions RBAC**
 
     ```bash
     k auth can-i list pods -n dev --as=system:serviceaccount:dev:my-sa
     k auth can-i list nodes --as=system:serviceaccount:dev:my-sa
     ```
 
-8. **Lấy lệnh join node**
+7. **Lấy lệnh join node**
 
     ```bash
     kubeadm token create --print-join-command
     ```
+
+8. **Debug node and pods**
+
+    | | Pod Debug | Node Debug |
+    | --- | --- | --- |
+    | Command | `k debug <pod>` | `k debug node/<node>` |
+    | Mục đích | Debug container | Debug Node |
+    | Quan trọng nhất | `--target` | `chroot /host` |
+    | Kiểm tra | `ps aux` | `systemctl status kubelet` |
+    | Network | Network namespace của Pod | Network namespace của Node |
+
+9. **Pod Security Standard**
+
+    Namespace là nơi cấu hình PSS:
+
+    ```yaml
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: secure-ns
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+        #                           ^mode     ^level
+    ```
+
+    | MODE (xử lý violation thế nào?) | Khi vi phạm |
+    | --- | --- |
+    | `enforce` | BLOCK Pod |
+    | `audit` | Cho chạy + RECORD violation |
+    | `warn` | Cho chạy + TELL user |
+
+    | LEVEL (nghiêm đến đâu?) | Ý nghĩa |
+    | --- | --- |
+    | `privileged` | Gần như không hạn chế |
+    | `baseline` | Chặn các cấu hình nguy hiểm phổ biến |
+    | `restricted` | Hardening mạnh nhất |
+
+10. **PriorityClass**
+
+    - `value`: số càng lớn → priority càng cao.
+    - `preemptionPolicy`: `PreemptLowerPriority` (có thể đuổi Pod thấp hơn) · `Never` (không preempt).
+    - `priorityClassName`: gán vào Pod.
+
+    | Priority | Value |
+    | --- | --- |
+    | `system-node-critical` | 2000001000 |
+    | `system-cluster-critical` | 2000000000 |
+    | User-defined (thường) | 0 – 1000000 |
+
+    **QoS class** của Pod (quyết định thứ tự bị evict khi node thiếu resource):
+
+    | QoS class | Điều kiện | Node thiếu resource | Note (thường dùng cho) |
+    | --- | --- | --- | --- |
+    | `BestEffort` | Không có `requests`/`limits` | Bị evict **đầu tiên** | Workload không quan trọng, test/batch tạm |
+    | `Burstable` | `requests` không bằng `limits` | Bị evict **thứ hai** | Ứng dụng thông thường, cần burst khi tải tăng |
+    | `Guaranteed` | `requests` bằng `limits` cho mọi container | Bị evict **cuối cùng** | Workload quan trọng như database, critical service |
+
+11. **iptables** (troubleshoot Service/kube-proxy)
+
+    ```bash
+    iptables -L -n -v                       # rules của filter table, hiển thị IP/port dạng số + packet/byte counters
+    iptables -L -n -v --line-numbers        # như trên, thêm số thứ tự rule (để xoá/chèn rule)
+    iptables -t nat -L -n -v                # NAT table (nơi kube-proxy tạo rule cho Service)
+    iptables-save | grep <service>          # xuất toàn bộ rules, lọc rule của một Service
+    iptables-save -t nat                    # xuất riêng NAT table
+    ```
+
+12. **grep options** (lấy thêm dòng xung quanh kết quả)
+
+    | Option | Ý nghĩa |
+    | --- | --- |
+    | `-A1` | After: 1 dòng phía sau |
+    | `-B1` | Before: 1 dòng phía trước |
+    | `-C1` | Context: 1 dòng trước và 1 dòng sau |
+
+    ```bash
+    k get hpa -o yaml | grep -A5 "metrics:"
+    ```
+
+13. **Pod Scheduling – Tips & Tricks**
+
+    **Quy tắc vàng:** `nodeSelector/Affinity` = chọn Node · `Toleration` = được phép vượt Taint · `Cordon` = không nhận Pod mới · `requests` = thứ Scheduler dùng để xét chỗ đặt Pod.
+
+    | Cơ chế | Ghi nhớ |
+    | --- | --- |
+    | `nodeSelector` | Match chính xác label, nhiều điều kiện là AND |
+    | `nodeAffinity` | Operator: `In`, `NotIn`, `Exists`, `DoesNotExist`, `Gt`, `Lt`. `required...` = bắt buộc, `preferred...` = chỉ ưu tiên |
+    | `nodeName` | Gán thẳng Pod vào Node, bỏ qua Scheduler |
+    | `podAffinity` / `podAntiAffinity` | Chạy gần / tránh Pod khác, `topologyKey: kubernetes.io/hostname` = theo Node |
+    | `topologySpreadConstraints` | Rải Pod đều giữa Node/Zone, `DoNotSchedule` = không thỏa thì không schedule |
+
+    | Taint effect | Tác dụng |
+    | --- | --- |
+    | `NoSchedule` | Chặn Pod mới không tolerate |
+    | `PreferNoSchedule` | Cố tránh, không chặn tuyệt đối |
+    | `NoExecute` | Chặn Pod mới và evict Pod đang chạy không tolerate (`tolerationSeconds` = thời gian được ở lại) |
+
+    - `operator: Equal` match key-value, `Exists` chỉ cần có key. `Exists` mà không có key thì tolerate mọi Taint.
+    - **Toleration chỉ cho phép, không ép Pod vào Node đó.** Muốn Pod chỉ chạy trên Node có Taint thì kết hợp `nodeSelector/nodeAffinity` + `tolerations`.
+    - Node có nhiều Taint thì Pod phải tolerate **tất cả** Taint đang chặn nó.
+    - Control plane có Taint `node-role.kubernetes.io/control-plane:NoSchedule`. Muốn chạy Pod ở đó: Toleration. Muốn **chỉ** chạy ở đó: thêm `nodeSelector` với label `node-role.kubernetes.io/control-plane: ""`.
+    - `SchedulingDisabled` nghĩa là Node bị Cordon, dùng `k uncordon <node>`.
+
+    **Pod Pending → `k describe pod`, đọc Events trước, đừng đoán:**
+
+    | Event | Nguyên nhân / Kiểm tra |
+    | --- | --- |
+    | `untolerated taint` | Thiếu Toleration |
+    | `didn't match node selector/affinity` | Sai label hoặc điều kiện chọn Node |
+    | `node(s) were unschedulable` | Node bị Cordon |
+    | `Insufficient cpu/memory` | Xem `requests` và Allocated resources (`k describe node`), không chỉ nhìn `top nodes` |
+    | `volume node affinity conflict` | PV có `nodeAffinity` không khớp Node |
+    | `Too many pods` | Node chạm giới hạn số Pod |
+    | PVC Pending | Kiểm tra PVC/PV và StorageClass |
+
+    ```bash
+    k get nodes --show-labels                                        # xem labels
+    k describe node <node> | grep Taint -A1                          # taint của 1 node
+    k get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints   # taint của mọi node
+    k taint nodes <node> gpu=true:NoSchedule                         # thêm taint
+    k taint nodes <node> gpu=true:NoSchedule-                        # xoá taint (dấu - cuối)
+    k cordon <node> ; k uncordon <node>
+    k get pod <pod> -o wide                                          # Pod đang nằm trên node nào
+    ```
+
+    !!! warning "Đề không yêu cầu thì đừng tự thêm label hay xoá Taint"
 
 ## Syllabus
 ### Domain 1: Storage
@@ -938,6 +1061,176 @@ kubectl get nodes
 - kubeadm luôn đi trước `kubeadm upgrade ...`, kubelet luôn được nâng **sau** bước đó
 - Package đổi → daemon-reload → restart
 - Control plane trước → worker từng node một.
+
+### Job & CronJob
+
+- **Job**: chạy Pod đến khi **hoàn thành** (khác Deployment chạy mãi). Pod fail thì Job tạo Pod mới để retry, tối đa `backoffLimit` lần.
+- **CronJob**: tạo Job theo lịch cron (như cron trên Linux). API group là `batch/v1`.
+- `restartPolicy` của Job/CronJob chỉ được là `Never` hoặc `OnFailure` (không dùng `Always`).
+
+| Field | Ý nghĩa |
+| --- | --- |
+| `completions` | Tổng số lần phải chạy **thành công** |
+| `parallelism` | Số Pod chạy cùng lúc |
+| `backoffLimit` | Số lần retry Pod fail trước khi Job bỏ cuộc |
+| `schedule` | Cron syntax, ví dụ `0 * * * *` = mỗi giờ phút 0 |
+| `successfulJobsHistoryLimit` | Số Job thành công được giữ lại (mặc định 3) |
+| `failedJobsHistoryLimit` | Số Job fail được giữ lại (mặc định 1) |
+| `ttlSecondsAfterFinished` | Tự xoá Job (và Pod) sau khi xong |
+
+**Tạo nhanh:**
+
+```bash
+# Job (mặc định chạy 1 lần), rồi chỉnh completions/parallelism
+k create job cleanup-job --image=busybox:1.37 -- echo "Cleanup complete"
+
+# CronJob
+k create cronjob hourly-backup --image=busybox:1.37 --schedule="0 * * * *" -- /backup-script.sh
+
+# Trigger CronJob thủ công (tạo Job từ CronJob)
+k create job hourly-backup-manual-1 --from=cronjob/hourly-backup
+```
+
+**YAML Job** (3 lần, chạy tuần tự):
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cleanup-job
+spec:
+  completions: 3
+  parallelism: 1
+  backoffLimit: 3
+  template:
+    spec:
+      containers:
+      - name: cleanup
+        image: busybox:1.37
+        command: ["echo", "Cleanup complete"]
+      restartPolicy: Never
+```
+
+**YAML CronJob** (mỗi giờ, giữ 3 Job thành công):
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hourly-backup
+spec:
+  schedule: "0 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: busybox:1.37
+            command: ["/bin/sh", "-c", "backup-script.sh"]
+          restartPolicy: OnFailure
+```
+
+**Verify:**
+
+```bash
+k get job cleanup-job -w                   # chờ COMPLETIONS = 3/3
+k get pod -l job-name=cleanup-job          # 3 Pod
+k logs -l job-name=cleanup-job             # log của các Pod
+k get cronjob hourly-backup                # LAST SCHEDULE, ACTIVE
+k get job                                  # Job do CronJob tạo ra
+k logs job/hourly-backup-manual-1          # log Job trigger thủ công
+```
+
+!!! warning "Những cái từng bị dính"
+    - **`completions` ≠ chạy song song**: `completions=3` nghĩa là phải thành công 3 lần tổng cộng. Với `parallelism=1` chúng chạy tuần tự; `parallelism=3` + `completions=3` thì cả 3 chạy cùng lúc.
+    - **CronJob dùng `batch/v1`**, không phải `v1`.
+    - **Pod fail không tự bị xoá** nếu không set `ttlSecondsAfterFinished` (để còn debug). Test xong nhớ dọn Job/CronJob, kẻo còn Pod mồ côi.
+    - **`LAST SCHEDULE` là lần chạy gần nhất**, không phải lần chạy kế tiếp.
+    - **`command: ["echo", "Backup at $(date)"]` không expand `$(date)`** vì không có shell. Cần shell thì dùng `["/bin/sh", "-c", "..."]`.
+    - **`k logs job/<name>` chỉ lấy log từ một Pod**. Muốn xem hết thì dùng `-l job-name=<name>`.
+
+**Cleanup:**
+
+```bash
+k delete job cleanup-job
+k delete cronjob hourly-backup
+k delete job hourly-backup-manual-1
+```
+
+### Ingress
+
+Ingress (`networking.k8s.io/v1`) expose Service ra ngoài cluster qua HTTP/HTTPS, hỗ trợ routing theo path và host. Gateway API là hướng mới, nhưng Ingress cổ điển vẫn xuất hiện trong CKA.
+
+- Ingress chỉ là **rule**. Cần **Ingress Controller** (ví dụ nginx-ingress) để rule có tác dụng. Không có controller thì Ingress vẫn tạo được nhưng `ADDRESS` trống.
+- Controller cần Service kiểu LoadBalancer hoặc NodePort để nhận traffic từ ngoài.
+- Trong đề thi, hạ tầng thường đã có sẵn. Chỉ cần verify controller đang chạy.
+
+| pathType | Ý nghĩa |
+| --- | --- |
+| `Prefix` | Match mọi path bắt đầu bằng path của rule (`/api` match cả `/api/v1/users`) |
+| `Exact` | Chỉ match đúng path |
+
+**Thứ tự làm:** Deployment → Service → verify endpoints → Ingress.
+
+```bash
+k create deployment web-app -n exercise-19 --image=nginx:1.28 --replicas=2
+k expose deployment web-app -n exercise-19 --name=web-service --port=80 --target-port=80
+
+# Verify Service có endpoints trước khi tạo Ingress
+k get endpoints -n exercise-19
+
+# Tạo Ingress nhanh (path kết thúc bằng * → pathType Prefix)
+k create ingress app-ingress -n exercise-19 \
+  --rule="/*=web-service:80" \
+  --rule="/api/*=api-service:8080" \
+  --class=nginx
+
+k get ingress -n exercise-19
+k describe ingress app-ingress -n exercise-19    # xem rules + backends
+```
+
+**YAML** (`/` → web-service, `/api` → api-service, default backend → web-service):
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: exercise-19
+spec:
+  ingressClassName: nginx
+  defaultBackend:
+    service:
+      name: web-service
+      port:
+        number: 80
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 8080
+```
+
+!!! warning "Những cái từng bị dính"
+    - **Quên tạo Service trước**: Ingress vẫn tạo thành công nhưng lỗi `no endpoints available for backend`. Luôn tạo Service, verify endpoints, rồi mới tạo Ingress.
+    - **Dùng `Exact` thay vì `Prefix`**: không vào được `/api/v1/users`. Đổi sang `Prefix` mới được.
+    - **`ADDRESS` trống**: kiểm tra Ingress Controller có đang chạy không, và `ingressClassName` có khớp với IngressClass không.
+    - **Port của app phải khớp `targetPort`**: nginx mặc định listen port 80. Nếu `api-app` dùng `nginx` mà `targetPort=8080` thì Service có endpoints nhưng request vẫn không tới được.
 
 ### HPA vs VPA
 
